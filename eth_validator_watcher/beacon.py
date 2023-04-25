@@ -1,7 +1,8 @@
 from collections import defaultdict
 from functools import lru_cache
 
-import requests
+from requests import Session, codes
+from requests.adapters import HTTPAdapter, Retry
 
 from .models import Block, Committees, ProposerDuties, Validators
 from .utils import (
@@ -19,6 +20,18 @@ class Beacon:
         url: URL where the beacon can be reached
         """
         self.__url = url
+        self.__http = Session()
+
+        self.__http.mount(
+            "http://",
+            HTTPAdapter(
+                max_retries=Retry(
+                    backoff_factor=0.5,
+                    total=3,
+                    status_forcelist=[codes.not_found],
+                )
+            ),
+        )
 
     @lru_cache(maxsize=2)
     def get_proposer_duties(self, epoch: int) -> ProposerDuties:
@@ -26,19 +39,14 @@ class Beacon:
 
         epoch: Epoch
         """
-        resp = requests.get(f"{self.__url}/eth/v1/validator/duties/proposer/{epoch}")
+        response = self.__http.get(
+            f"{self.__url}/eth/v1/validator/duties/proposer/{epoch}"
+        )
 
-        proposer_duties_dict = resp.json()
+        response.raise_for_status()
+
+        proposer_duties_dict = response.json()
         return ProposerDuties(**proposer_duties_dict)
-
-    def is_block_missed(self, slot: int) -> bool:
-        """Return True if block is missed at given slot, else False
-
-        slot: Slot
-        """
-        current_block = requests.get(f"{self.__url}/eth/v2/beacon/blocks/{slot}")
-
-        return current_block.status_code == 404
 
     def get_active_validator_index_to_pubkey(self, pubkeys: set[str]) -> dict[int, str]:
         """Return a dictionnary with:
@@ -47,10 +55,11 @@ class Beacon:
 
         pubkeys: The list of validators pubkey to use.
         """
-        response = requests.get(
+        response = self.__http.get(
             f"{self.__url}/eth/v1/beacon/states/head/validators",
         )
 
+        response.raise_for_status()
         validators_dict = response.json()
         validators = Validators(**validators_dict)
 
@@ -77,12 +86,13 @@ class Beacon:
 
         epoch: Epoch
         """
-        resp = requests.get(
+        response = self.__http.get(
             f"{self.__url}/eth/v1/beacon/states/head/committees",
             params=dict(epoch=epoch),
         )
 
-        committees_dict = resp.json()
+        response.raise_for_status()
+        committees_dict = response.json()
 
         committees = Committees(**committees_dict)
         data = committees.data
@@ -108,17 +118,10 @@ class Beacon:
 
         slot: Slot
         """
-        resp = requests.get(f"{self.__url}/eth/v2/beacon/blocks/{slot}")
-        block_dict = resp.json()
-
-        # TODO: Remove this try/except block when we now what's going wrong from time
-        #       to time
-        try:
-            block = Block(**block_dict)
-        except Exception as e:
-            print(resp.status_code)
-            raise RuntimeError(block_dict) from e
-
+        response = self.__http.get(f"{self.__url}/eth/v2/beacon/blocks/{slot}")
+        response.raise_for_status()
+        block_dict = response.json()
+        block = Block(**block_dict)
         attestations = block.data.message.body.attestations
 
         attestations_from_previous_block = (
