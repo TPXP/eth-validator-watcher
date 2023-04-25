@@ -4,9 +4,9 @@ from pathlib import Path
 from typing import List, Optional
 
 import requests
-import sseclient
 import typer
 from prometheus_client import Counter, Gauge, start_http_server
+from sseclient import SSEClient
 from typer import Option
 
 from .beacon import Beacon
@@ -22,7 +22,7 @@ app = typer.Typer()
 
 @app.command()
 def handler(
-    beacon_url: str = Option(..., help="URL of Teku beacon node"),
+    beacon_url: str = Option(..., help="URL of beacon node"),
     pubkeys_file_path: Optional[Path] = Option(
         None,
         help="File containing the list of public keys to watch",
@@ -116,15 +116,15 @@ def handler(
     # - value: Validator pubkey
     our_active_val_index_to_pubkey: Optional[dict[int, str]] = None
 
-    # Indexes of our validators which not optimal attestation inclusion for the last
+    # Indexes of our validators with suboptimal attestation inclusion for the last
     # epoch
     our_ko_vals_index: set[int] = set()
 
-    # Indexes of our validators which not optimal attestation inclusion for the two last
+    # Indexes of our validators with suboptimal attestation inclusion for the two last
     # epochs
     our_2_times_in_a_raw_ko_vals_index: set[int] = set()
 
-    for event in sseclient.SSEClient(
+    for event in SSEClient(
         requests.get(
             f"{beacon_url}/eth/v1/events",
             stream=True,

@@ -154,11 +154,11 @@ def get_our_pubkeys(
         else set()
     )
 
-    pubkeys_from_web3signer: set[str] = set().union(
+    pubkeys_from_web3signers: set[str] = set().union(
         *(web3signer.load_pubkeys() for web3signer in web3signers)
     )
 
-    return pubkeys_from_file | pubkeys_from_web3signer
+    return pubkeys_from_file | pubkeys_from_web3signers
 
 
 def write_liveliness_file(liveliness_file: Path):

@@ -65,7 +65,7 @@ def handle_missed_block_detection(
             )
         )
 
-        # Check if the validator who has to propose is ours
+        # Check if the validator that has to propose is ours
         is_our_validator = proposer_pubkey in our_pubkeys
         positive_emoji = "✨" if is_our_validator else "✅"
         negative_emoji = "❌" if is_our_validator else "💩"
