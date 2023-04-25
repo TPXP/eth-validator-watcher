@@ -1,6 +1,2 @@
-.coverage
-.python-version
-.vscode
-build
 __pycache__
-*.egg-info
+.mypy_cache
