@@ -35,16 +35,10 @@ def handle_missed_block_detection(
 
     previous_slot = current_slot - 1 if previous_slot is None else previous_slot
 
-    # Normally (according to ConsenSys team), if a block is missed, then there is no
-    # event emitted. However, it seems there is some cases where the event is
-    # nevertheless emitted. So we check its state.
-
-    is_current_block_missed: bool = beacon.is_block_missed(current_slot)
-
     slots_with_status = [
         SlotWithStatus(number=slot, missed=True)
         for slot in range(previous_slot + 1, current_slot)
-    ] + [SlotWithStatus(number=current_slot, missed=is_current_block_missed)]
+    ] + [SlotWithStatus(number=current_slot, missed=False)]
 
     for slot_with_status in slots_with_status:
         epoch = slot_with_status.number // NB_SLOT_PER_EPOCH
