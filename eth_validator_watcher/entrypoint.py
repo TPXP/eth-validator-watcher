@@ -9,7 +9,7 @@ from sseclient import SSEClient
 from typer import Option
 
 from .beacon import Beacon, NoBlockError
-from .missed_attestations import handle_missed_attestation_detection
+from .missed_attestations import handle_suboptimal_attestation_detection
 from .missed_blocks import handle_missed_block_detection
 from .models import Block, EventBlock
 from .next_blocks_proposal import handle_next_blocks_proposal
@@ -40,13 +40,6 @@ def handler(
     prometheus_probe_rate_of_not_optimal_attestation_inclusion: str = Option(
         "eth_validator_watcher_rate_of_not_optimal_attestation_inclusion",
         help="Prometheus probe name for rate of non optimal attestation inclusion",
-    ),
-    prometheus_probe_number_of_two_not_optimal_attestation_inclusion_in_a_raw: str = Option(
-        "eth_validator_watcher_two_not_optimal_attestation_inclusion_in_a_raw",
-        help=(
-            "Prometheus probe name for number of two non optimal attestation "
-            " inclusion in a raw"
-        ),
     ),
 ) -> None:
     """
@@ -95,14 +88,6 @@ def handler(
         "Ethereum validator watcher rate of not optimal attestation inclusion",
     )
 
-    number_of_two_not_optimal_attestation_inclusion_in_a_raw_gauge = Gauge(
-        prometheus_probe_number_of_two_not_optimal_attestation_inclusion_in_a_raw,
-        (
-            "Ethereum validator watcher number of keys with two not optimal "
-            "attestation inclusion in a raw"
-        ),
-    )
-
     beacon = Beacon(beacon_url)
     web3signers = {Web3Signer(web3signer_url) for web3signer_url in web3signer_urls}
 
@@ -118,10 +103,6 @@ def handler(
     # Indexes of our validators with suboptimal attestation inclusion for the last
     # epoch
     our_ko_vals_index: set[int] = set()
-
-    # Indexes of our validators with suboptimal attestation inclusion for the two last
-    # epochs
-    our_2_times_in_a_raw_ko_vals_index: set[int] = set()
 
     for event in SSEClient(
         requests.get(
@@ -164,16 +145,13 @@ def handler(
         (
             our_active_val_index_to_pubkey,
             our_ko_vals_index,
-            our_2_times_in_a_raw_ko_vals_index,
-        ) = handle_missed_attestation_detection(
+        ) = handle_suboptimal_attestation_detection(
             beacon,
             potential_block,
             slot,
             our_pubkeys,
             our_active_val_index_to_pubkey,
             our_ko_vals_index,
-            our_2_times_in_a_raw_ko_vals_index,
-            number_of_two_not_optimal_attestation_inclusion_in_a_raw_gauge,
             rate_of_not_optimal_attestation_inclusion_gauge,
         )
 

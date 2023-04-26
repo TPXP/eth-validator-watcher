@@ -11,17 +11,15 @@ from .utils import NB_SLOT_PER_EPOCH, apply_mask
 print = functools.partial(print, flush=True)
 
 
-def handle_missed_attestation_detection(
+def handle_suboptimal_attestation_detection(
     beacon: Beacon,
     potential_block: Optional[Block],
     slot: int,
     our_pubkeys: set[str],
     our_active_val_index_to_pubkey: Optional[dict[int, str]],
     cumulated_our_ko_vals_index: set[int],
-    cumulated_or_2_times_in_a_raw_vals_index: set[int],
-    number_of_two_not_optimal_attestation_inclusion_in_a_raw_gauge: Gauge,
     rate_of_not_optimal_attestation_inclusion_gauge: Gauge,
-) -> Tuple[dict[int, str], set[int], set[int]]:
+) -> Tuple[dict[int, str], set[int]]:
     """Handle missed attestaion detection
 
     Print log for our public keys which:
@@ -52,15 +50,10 @@ def handle_missed_attestation_detection(
     cumulated_our_ko_vals_index: A set containing our validator pubkeys with suboptimal
                                  attestation inclusion during the last epoch
 
-    cumulated_or_2_times_in_a_raw_vals_index: A set containing our validator pubkeys
-                                              with suboptimal attestation inclusion
-                                              for at least two epochs in a raw
-
-    number_of_two_not_optimal_attestation_inclusion_in_a_raw_gauge: Prometheus gauge
-    rate_of_not_optimal_attestation_inclusion_gauge               : Prometheus gauge
+    rate_of_not_optimal_attestation_inclusion_gauge: Prometheus gauge
     """
     if our_pubkeys == set():
-        return {}, set(), set()
+        return {}, set()
 
     our_active_val_index_to_pubkey = (
         beacon.get_active_validator_index_to_pubkey(our_pubkeys)
@@ -72,7 +65,6 @@ def handle_missed_attestation_detection(
         return (
             our_active_val_index_to_pubkey,
             cumulated_our_ko_vals_index,
-            cumulated_or_2_times_in_a_raw_vals_index,
         )
 
     block = potential_block
@@ -199,18 +191,7 @@ def handle_missed_attestation_detection(
         cumulated_our_ko_vals_index | our_ko_vals_index
     ) - our_ok_vals_index
 
-    our_2_times_in_a_raw_ko_vals_index = cumulated_our_ko_vals_index & our_ko_vals_index
-
-    new_cumulated_our_2_times_in_a_raw_ko_vals_index = (
-        cumulated_or_2_times_in_a_raw_vals_index | our_2_times_in_a_raw_ko_vals_index
-    ) - our_ok_vals_index
-
-    number_of_two_not_optimal_attestation_inclusion_in_a_raw_gauge.set(
-        len(new_cumulated_our_2_times_in_a_raw_ko_vals_index)
-    )
-
     return (
         our_active_val_index_to_pubkey,
         new_cumulated_our_ko_vals_index,
-        new_cumulated_our_2_times_in_a_raw_ko_vals_index,
     )
