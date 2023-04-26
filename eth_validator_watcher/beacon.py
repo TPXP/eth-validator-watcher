@@ -74,8 +74,11 @@ class Beacon:
         key  : Index of validator
         value: Public key for validator
 
-        pubkeys: The list of validators pubkey to use.
+        pubkeys: The set of validators pubkey to use.
         """
+        if len(pubkeys) == 0:
+            return {}
+
         response = self.__http.get(
             f"{self.__url}/eth/v1/beacon/states/head/validators",
         )

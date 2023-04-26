@@ -1,5 +1,5 @@
 import functools
-from typing import Optional, Tuple
+from typing import Optional
 
 from prometheus_client import Gauge
 
@@ -15,11 +15,10 @@ def handle_suboptimal_attestation_detection(
     beacon: Beacon,
     potential_block: Optional[Block],
     slot: int,
-    our_pubkeys: set[str],
-    our_active_val_index_to_pubkey: Optional[dict[int, str]],
+    our_active_val_index_to_pubkey: dict[int, str],
     cumulated_our_ko_vals_index: set[int],
     rate_of_not_optimal_attestation_inclusion_gauge: Gauge,
-) -> Tuple[dict[int, str], set[int]]:
+) -> set[int]:
     """Handle missed attestaion detection
 
     Print log for our public keys which:
@@ -30,18 +29,11 @@ def handle_suboptimal_attestation_detection(
     - Did not attested correctly during the last epoch
     - Did not attested correctly during the last two epochs
 
-    Returns:
-    - A dictionnary with:
-      - key  : our active validator index
-      - value: our active validator public key
-    - A set containing our validator pubkeys with suboptimal attestation inclusion
-      during the last epoch
-    - A set containing our validator pubkeys with suboptimal attestation inclusion
-      for at least two epochs in a raw
+    Returns a set containing our validator pubkeys with suboptimal attestation inclusion
+    during the last epoch
 
     beacon     : Beacon
     slot       : Slot
-    our_pubkeys: Set of our validators public keys
 
     our_active_val_index_to_pubkey (Optional): dictionnary with:
       - key  : index of our active validator
@@ -52,20 +44,8 @@ def handle_suboptimal_attestation_detection(
 
     rate_of_not_optimal_attestation_inclusion_gauge: Prometheus gauge
     """
-    if our_pubkeys == set():
-        return {}, set()
-
-    our_active_val_index_to_pubkey = (
-        beacon.get_active_validator_index_to_pubkey(our_pubkeys)
-        if (our_active_val_index_to_pubkey is None or slot % NB_SLOT_PER_EPOCH == 0)
-        else our_active_val_index_to_pubkey
-    )
-
     if potential_block is None:
-        return (
-            our_active_val_index_to_pubkey,
-            cumulated_our_ko_vals_index,
-        )
+        return cumulated_our_ko_vals_index
 
     block = potential_block
 
@@ -191,7 +171,4 @@ def handle_suboptimal_attestation_detection(
         cumulated_our_ko_vals_index | our_ko_vals_index
     ) - our_ok_vals_index
 
-    return (
-        our_active_val_index_to_pubkey,
-        new_cumulated_our_ko_vals_index,
-    )
+    return new_cumulated_our_ko_vals_index

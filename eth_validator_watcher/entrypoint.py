@@ -9,11 +9,11 @@ from sseclient import SSEClient
 from typer import Option
 
 from .beacon import Beacon, NoBlockError
-from .missed_attestations import handle_suboptimal_attestation_detection
+from .suboptimal_attestations import handle_suboptimal_attestation_detection
 from .missed_blocks import handle_missed_block_detection
 from .models import Block, EventBlock
 from .next_blocks_proposal import handle_next_blocks_proposal
-from .utils import get_our_pubkeys, write_liveness_file
+from .utils import get_our_pubkeys, is_epoch_start, write_liveness_file
 from .web3signer import Web3Signer
 
 app = typer.Typer()
@@ -93,12 +93,15 @@ def handler(
 
     previous_slot_number: Optional[int] = None
     previous_epoch: Optional[int] = None
-    our_pubkeys: Optional[set[str]] = None
+
+    our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
 
     # Dict containing, for our active validators:
     # - key  : Validator index
     # - value: Validator pubkey
-    our_active_val_index_to_pubkey: Optional[dict[int, str]] = None
+    our_active_val_index_to_pubkey = beacon.get_active_validator_index_to_pubkey(
+        our_pubkeys
+    )
 
     # Indexes of our validators with suboptimal attestation inclusion for the last
     # epoch
@@ -126,8 +129,12 @@ def handler(
 
         potential_block = get_potential_block(slot)
 
-        # Retrieve our pubkeys from file and/or Web3Signer
-        our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers, our_pubkeys, slot)
+        if is_epoch_start(slot):
+            our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
+
+            our_active_val_index_to_pubkey = (
+                beacon.get_active_validator_index_to_pubkey(our_pubkeys)
+            )
 
         previous_slot_number = handle_missed_block_detection(
             beacon,
@@ -142,14 +149,10 @@ def handler(
             beacon, our_pubkeys, slot, previous_epoch
         )
 
-        (
-            our_active_val_index_to_pubkey,
-            our_ko_vals_index,
-        ) = handle_suboptimal_attestation_detection(
+        our_ko_vals_index = handle_suboptimal_attestation_detection(
             beacon,
             potential_block,
             slot,
-            our_pubkeys,
             our_active_val_index_to_pubkey,
             our_ko_vals_index,
             rate_of_not_optimal_attestation_inclusion_gauge,

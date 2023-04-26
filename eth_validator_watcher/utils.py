@@ -129,8 +129,6 @@ def load_pubkeys_from_file(path: Path) -> set[str]:
 def get_our_pubkeys(
     pubkeys_file_path: Optional[Path],
     web3signers: set[Web3Signer],
-    our_pubkeys: Optional[set[str]],
-    slot: int,
 ) -> set[str]:
     """Get our pubkeys
 
@@ -143,9 +141,6 @@ def get_our_pubkeys(
     our_pubkey: The set containing pubkey to watch]
     slot: Data Slot
     """
-
-    if our_pubkeys is not None and slot % NB_SLOT_PER_EPOCH != 0:
-        return our_pubkeys
 
     # Get public keys to watch from file
     pubkeys_from_file: set[str] = (
@@ -167,3 +162,8 @@ def write_liveness_file(liveliness_file: Path):
 
     with liveliness_file.open("w") as file_descriptor:
         file_descriptor.write("OK")
+
+
+def is_epoch_start(slot: int) -> bool:
+    """Check if `slot` is the beginning of a new epoch"""
+    return slot % NB_SLOT_PER_EPOCH == 0
