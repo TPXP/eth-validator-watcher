@@ -3,8 +3,9 @@ from typing import Optional, Tuple
 
 from prometheus_client import Gauge
 
+from .models import Block
+
 from .beacon import Beacon
-from .models import DataBlock
 from .utils import NB_SLOT_PER_EPOCH, apply_mask
 
 print = functools.partial(print, flush=True)
@@ -12,7 +13,8 @@ print = functools.partial(print, flush=True)
 
 def handle_missed_attestation_detection(
     beacon: Beacon,
-    data_block: DataBlock,
+    potential_block: Optional[Block],
+    slot: int,
     our_pubkeys: set[str],
     our_active_val_index_to_pubkey: Optional[dict[int, str]],
     cumulated_our_ko_vals_index: set[int],
@@ -40,7 +42,7 @@ def handle_missed_attestation_detection(
       for at least two epochs in a raw
 
     beacon     : Beacon
-    data_block : Data value of a beacon chain block
+    slot       : Slot
     our_pubkeys: Set of our validators public keys
 
     our_active_val_index_to_pubkey (Optional): dictionnary with:
@@ -62,18 +64,24 @@ def handle_missed_attestation_detection(
 
     our_active_val_index_to_pubkey = (
         beacon.get_active_validator_index_to_pubkey(our_pubkeys)
-        if (
-            our_active_val_index_to_pubkey == None
-            or data_block.slot % NB_SLOT_PER_EPOCH == 0
-        )
+        if (our_active_val_index_to_pubkey is None or slot % NB_SLOT_PER_EPOCH == 0)
         else our_active_val_index_to_pubkey
     )
+
+    if potential_block is None:
+        return (
+            our_active_val_index_to_pubkey,
+            cumulated_our_ko_vals_index,
+            cumulated_or_2_times_in_a_raw_vals_index,
+        )
+
+    block = potential_block
 
     # From here, `our_active_val_index_to_pubkey` cannot be `None`, but the linter
     # does not get it.
     assert our_active_val_index_to_pubkey is not None
 
-    previous_slot = data_block.slot - 1
+    previous_slot = slot - 1
     epoch_of_previous_slot = previous_slot // NB_SLOT_PER_EPOCH
 
     # All our active validators index
@@ -103,6 +111,7 @@ def handle_missed_attestation_detection(
 
     # Index ouf our validators which had to attest for the previous slot
     our_duty_vals_index = duty_vals_index & our_active_vals_index
+
     # ---------------------
     # To refactor from here
 
@@ -111,7 +120,7 @@ def handle_missed_attestation_detection(
     ]
 
     actual_committee_index_to_validator_attestation_success = (
-        beacon.aggregate_attestations_from_previous_slot(data_block.slot)
+        beacon.aggregate_attestations(block, previous_slot)
     )
 
     list_of_ok_vals_index = (

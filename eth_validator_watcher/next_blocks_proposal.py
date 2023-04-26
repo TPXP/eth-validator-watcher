@@ -1,14 +1,13 @@
 from typing import Optional
 
 from .beacon import Beacon
-from .models import DataBlock
 from .utils import NB_SLOT_PER_EPOCH
 
 
 def handle_next_blocks_proposal(
     beacon: Beacon,
     our_pubkeys: set[str],
-    data_block: DataBlock,
+    slot: int,
     previous_epoch: Optional[int],
 ) -> int:
     """Handle next blocks proposal
@@ -23,7 +22,6 @@ def handle_next_blocks_proposal(
     data_block    : Data value of a beacon chain block
     previous_epoch: Previous epoch
     """
-    slot = data_block.slot
     epoch = slot // NB_SLOT_PER_EPOCH
     next_epoch = epoch + 1
 

@@ -3,6 +3,7 @@ from functools import lru_cache
 
 from requests import Session, codes
 from requests.adapters import HTTPAdapter, Retry
+from requests.exceptions import RetryError
 
 from .models import Block, Committees, ProposerDuties, Validators
 from .utils import (
@@ -11,6 +12,10 @@ from .utils import (
     remove_all_items_from_last_true,
     switch_endianness,
 )
+
+
+class NoBlockError(Exception):
+    pass
 
 
 class Beacon:
@@ -26,12 +31,28 @@ class Beacon:
             "http://",
             HTTPAdapter(
                 max_retries=Retry(
-                    backoff_factor=0.5,
+                    backoff_factor=1,
                     total=3,
                     status_forcelist=[codes.not_found],
                 )
             ),
         )
+
+    def get_block(self, slot: int) -> Block:
+        """Get a block
+
+        slot: Slot
+        """
+        response = self.__http.get(f"{self.__url}/eth/v2/beacon/blocks/{slot}")
+
+        try:
+            response.raise_for_status()
+        except RetryError as e:
+            # If we are here, it means the block does not exist
+            raise NoBlockError from e
+
+        block_dict = response.json()
+        return Block(**block_dict)
 
     @lru_cache(maxsize=2)
     def get_proposer_duties(self, epoch: int) -> ProposerDuties:
@@ -105,10 +126,9 @@ class Beacon:
 
         return result
 
-    def aggregate_attestations_from_previous_slot(
-        self, slot: int
-    ) -> dict[int, list[bool]]:
-        """Return a nested dictionnary.
+    def aggregate_attestations(self, block: Block, slot: int) -> dict[int, list[bool]]:
+        """Aggregates all attestations for the slot `slot` that are presient
+        in block `block`.
         key  : Committee index
         value: A list of boolean
 
@@ -116,18 +136,13 @@ class Beacon:
         If the validator attestation from the previous slot is included in the current
         slot, the boolean is True. Else, it is False.
 
+        block: Block
         slot: Slot
         """
-        response = self.__http.get(f"{self.__url}/eth/v2/beacon/blocks/{slot}")
-        response.raise_for_status()
-        block_dict = response.json()
-        block = Block(**block_dict)
-        attestations = block.data.message.body.attestations
-
-        attestations_from_previous_block = (
+        filtered_attestations = (
             attestation
-            for attestation in attestations
-            if attestation.data.slot == slot - 1
+            for attestation in block.data.message.body.attestations
+            if attestation.data.slot == slot
         )
 
         # TODO: Write this code with dict comprehension
@@ -135,7 +150,7 @@ class Beacon:
             int, list[list[bool]]
         ] = defaultdict(list)
 
-        for attestation in attestations_from_previous_block:
+        for attestation in filtered_attestations:
             aggregated_bits_little_endian_with_last_bit = attestation.aggregation_bits
 
             # Aggregations bits are given under binary (hexadecimal) shape.

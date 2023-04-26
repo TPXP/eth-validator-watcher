@@ -161,7 +161,7 @@ def get_our_pubkeys(
     return pubkeys_from_file | pubkeys_from_web3signers
 
 
-def write_liveliness_file(liveliness_file: Path):
+def write_liveness_file(liveliness_file: Path):
     """Overwrite liveliness file"""
     liveliness_file.parent.mkdir(exist_ok=True, parents=True)
 

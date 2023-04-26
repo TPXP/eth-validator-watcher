@@ -1,5 +1,4 @@
 import json
-import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -9,12 +8,12 @@ from prometheus_client import Counter, Gauge, start_http_server
 from sseclient import SSEClient
 from typer import Option
 
-from .beacon import Beacon
+from .beacon import Beacon, NoBlockError
 from .missed_attestations import handle_missed_attestation_detection
 from .missed_blocks import handle_missed_block_detection
-from .models import DataBlock
+from .models import Block, EventBlock
 from .next_blocks_proposal import handle_next_blocks_proposal
-from .utils import get_our_pubkeys, write_liveliness_file
+from .utils import get_our_pubkeys, write_liveness_file
 from .web3signer import Web3Signer
 
 app = typer.Typer()
@@ -33,7 +32,7 @@ def handler(
     web3signer_url: Optional[List[str]] = Option(
         None, help="URL to web3signer managing keys to watch"
     ),
-    liveliness_file: Optional[Path] = Option(None, help="Liveness file"),
+    liveness_file: Optional[Path] = Option(None, help="Liveness file"),
     prometheus_probe_missed_block_proposals: str = Option(
         "eth_validator_watcher_missed_block_proposals",
         help="Prometheus probe name for missed block proposals",
@@ -133,27 +132,33 @@ def handler(
         )
     ).events():
         data_dict = json.loads(event.data)
-        data_block = DataBlock(**data_dict)
+        slot = EventBlock(**data_dict).slot
 
-        # This sleep is here to ensure the beacon will respond correctly to all calls
-        # relative to the current slot. (Lighthouse ticket to be created)
-        time.sleep(1)
+        def get_potential_block(slot) -> Optional[Block]:
+            try:
+                return beacon.get_block(slot)
+            except NoBlockError:
+                # The block is probably orphaned:
+                # The beacon saw the block (that's why we received the event) but it was
+                # orphaned before we could fetch it.
+                return None
+
+        potential_block = get_potential_block(slot)
 
         # Retrieve our pubkeys from file and/or Web3Signer
-        our_pubkeys = get_our_pubkeys(
-            pubkeys_file_path, web3signers, our_pubkeys, data_block.slot
-        )
+        our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers, our_pubkeys, slot)
 
         previous_slot_number = handle_missed_block_detection(
             beacon,
-            data_block,
+            potential_block,
+            slot,
             previous_slot_number,
             missed_block_proposals_counter,
             our_pubkeys,
         )
 
         previous_epoch = handle_next_blocks_proposal(
-            beacon, our_pubkeys, data_block, previous_epoch
+            beacon, our_pubkeys, slot, previous_epoch
         )
 
         (
@@ -162,7 +167,8 @@ def handler(
             our_2_times_in_a_raw_ko_vals_index,
         ) = handle_missed_attestation_detection(
             beacon,
-            data_block,
+            potential_block,
+            slot,
             our_pubkeys,
             our_active_val_index_to_pubkey,
             our_ko_vals_index,
@@ -171,5 +177,5 @@ def handler(
             rate_of_not_optimal_attestation_inclusion_gauge,
         )
 
-        if liveliness_file is not None:
-            write_liveliness_file(liveliness_file)
+        if liveness_file is not None:
+            write_liveness_file(liveness_file)

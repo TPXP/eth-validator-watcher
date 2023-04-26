@@ -6,14 +6,15 @@ from prometheus_client import Counter
 from eth_validator_watcher.utils import NB_SLOT_PER_EPOCH
 
 from .beacon import Beacon
-from .models import DataBlock, SlotWithStatus
+from .models import Block, SlotWithStatus
 
 print = functools.partial(print, flush=True)
 
 
 def handle_missed_block_detection(
     beacon: Beacon,
-    data_block: DataBlock,
+    potential_block: Optional[Block],
+    current_slot: int,
     previous_slot: Optional[int],
     missed_block_proposals_counter: Counter,
     our_pubkeys: set[str],
@@ -25,20 +26,18 @@ def handle_missed_block_detection(
 
     Returns the current slot.
 
-    beacon       : Beacon
-    data_block   : Data value of a beacon chain block
-    previous_slot: Previous slot (Optional)
+    beacon                        : Beacon
+    slot                          : Slot
+    previous_slot                 : Previous slot (Optional)
     missed_block_proposals_counter: Prometheus counter
-    our_pubkeys: Set of our validators public keys
+    our_pubkeys                   : Set of our validators public keys
     """
-    current_slot = data_block.slot
-
     previous_slot = current_slot - 1 if previous_slot is None else previous_slot
 
     slots_with_status = [
         SlotWithStatus(number=slot, missed=True)
         for slot in range(previous_slot + 1, current_slot)
-    ] + [SlotWithStatus(number=current_slot, missed=False)]
+    ] + [SlotWithStatus(number=current_slot, missed=potential_block is None)]
 
     for slot_with_status in slots_with_status:
         epoch = slot_with_status.number // NB_SLOT_PER_EPOCH

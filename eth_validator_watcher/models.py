@@ -76,7 +76,7 @@ class Block(BaseModel):
     data: Data
 
 
-class DataBlock(BaseModel):
+class EventBlock(BaseModel):
     slot: int
 
 
