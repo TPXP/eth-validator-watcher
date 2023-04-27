@@ -9,11 +9,12 @@ from sseclient import SSEClient
 from typer import Option
 
 from .beacon import Beacon, NoBlockError
-from .suboptimal_attestations import handle_suboptimal_attestation_detection
+from .missed_attestations import handle_missed_attestations
 from .missed_blocks import handle_missed_block_detection
 from .models import Block, EventBlock
 from .next_blocks_proposal import handle_next_blocks_proposal
-from .utils import get_our_pubkeys, is_epoch_start, write_liveness_file
+from .suboptimal_attestations import handle_suboptimal_attestation
+from .utils import NB_SLOT_PER_EPOCH, get_our_pubkeys, write_liveness_file
 from .web3signer import Web3Signer
 
 app = typer.Typer()
@@ -91,7 +92,7 @@ def handler(
     beacon = Beacon(beacon_url)
     web3signers = {Web3Signer(web3signer_url) for web3signer_url in web3signer_urls}
 
-    previous_slot_number: Optional[int] = None
+    previous_slot: Optional[int] = None
     previous_epoch: Optional[int] = None
 
     our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
@@ -103,10 +104,6 @@ def handler(
         our_pubkeys
     )
 
-    # Indexes of our validators with suboptimal attestation inclusion for the last
-    # epoch
-    our_ko_vals_index: set[int] = set()
-
     for event in SSEClient(
         requests.get(
             f"{beacon_url}/eth/v1/events",
@@ -117,6 +114,7 @@ def handler(
     ).events():
         data_dict = json.loads(event.data)
         slot = EventBlock(**data_dict).slot
+        epoch = slot // NB_SLOT_PER_EPOCH
 
         def get_potential_block(slot) -> Optional[Block]:
             try:
@@ -129,34 +127,39 @@ def handler(
 
         potential_block = get_potential_block(slot)
 
-        if is_epoch_start(slot):
+        handle_missed_block_detection(
+            beacon,
+            potential_block,
+            slot,
+            previous_slot,
+            missed_block_proposals_counter,
+            our_pubkeys,
+        )
+
+        if previous_epoch is None or previous_epoch != epoch:
             our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
 
             our_active_val_index_to_pubkey = (
                 beacon.get_active_validator_index_to_pubkey(our_pubkeys)
             )
 
-        previous_slot_number = handle_missed_block_detection(
-            beacon,
-            potential_block,
-            slot,
-            previous_slot_number,
-            missed_block_proposals_counter,
-            our_pubkeys,
-        )
+            handle_next_blocks_proposal(beacon, our_pubkeys, slot)
 
-        previous_epoch = handle_next_blocks_proposal(
-            beacon, our_pubkeys, slot, previous_epoch
-        )
+            handle_missed_attestations(
+                beacon, our_active_val_index_to_pubkey, epoch - 1
+            )
 
-        our_ko_vals_index = handle_suboptimal_attestation_detection(
-            beacon,
-            potential_block,
-            slot,
-            our_active_val_index_to_pubkey,
-            our_ko_vals_index,
-            rate_of_not_optimal_attestation_inclusion_gauge,
-        )
+        if potential_block is not None:
+            handle_suboptimal_attestation(
+                beacon,
+                potential_block,
+                slot,
+                our_active_val_index_to_pubkey,
+                rate_of_not_optimal_attestation_inclusion_gauge,
+            )
+
+        previous_slot = slot
+        previous_epoch = epoch
 
         if liveness_file is not None:
             write_liveness_file(liveness_file)

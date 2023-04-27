@@ -18,7 +18,7 @@ def handle_missed_block_detection(
     previous_slot: Optional[int],
     missed_block_proposals_counter: Counter,
     our_pubkeys: set[str],
-) -> int:
+) -> None:
     """Handle missed block proposals detection
 
     Print log each time a block is proposed.
@@ -83,5 +83,3 @@ def handle_missed_block_detection(
 
         if is_our_validator and slot_with_status.missed:
             missed_block_proposals_counter.inc()
-
-    return current_slot

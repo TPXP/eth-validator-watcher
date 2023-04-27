@@ -162,8 +162,3 @@ def write_liveness_file(liveliness_file: Path):
 
     with liveliness_file.open("w") as file_descriptor:
         file_descriptor.write("OK")
-
-
-def is_epoch_start(slot: int) -> bool:
-    """Check if `slot` is the beginning of a new epoch"""
-    return slot % NB_SLOT_PER_EPOCH == 0

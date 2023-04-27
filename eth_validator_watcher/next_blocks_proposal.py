@@ -1,14 +1,15 @@
-from typing import Optional
+import functools
 
 from .beacon import Beacon
 from .utils import NB_SLOT_PER_EPOCH
+
+print = functools.partial(print, flush=True)
 
 
 def handle_next_blocks_proposal(
     beacon: Beacon,
     our_pubkeys: set[str],
     slot: int,
-    previous_epoch: Optional[int],
 ) -> int:
     """Handle next blocks proposal
 
@@ -17,19 +18,13 @@ def handle_next_blocks_proposal(
 
     Return the current epoch.
 
-    beacon        : Beacon
-    our_pubkeys   : Set of our validators public keys
-    data_block    : Data value of a beacon chain block
-    previous_epoch: Previous epoch
+    beacon     : Beacon
+    our_pubkeys: Set of our validators public keys
+    slot       : Slot
     """
     epoch = slot // NB_SLOT_PER_EPOCH
-    next_epoch = epoch + 1
-
-    if our_pubkeys == set() or previous_epoch is not None and epoch == previous_epoch:
-        return epoch
-
     proposers_duties_current_epoch = beacon.get_proposer_duties(epoch)
-    proposers_duties_next_epoch = beacon.get_proposer_duties(next_epoch)
+    proposers_duties_next_epoch = beacon.get_proposer_duties(epoch + 1)
 
     concatenated_data = (
         proposers_duties_current_epoch.data + proposers_duties_next_epoch.data

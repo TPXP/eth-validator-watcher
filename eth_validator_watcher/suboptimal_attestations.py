@@ -1,5 +1,4 @@
 import functools
-from typing import Optional
 
 from prometheus_client import Gauge
 
@@ -11,14 +10,13 @@ from .utils import NB_SLOT_PER_EPOCH, apply_mask
 print = functools.partial(print, flush=True)
 
 
-def handle_suboptimal_attestation_detection(
+def handle_suboptimal_attestation(
     beacon: Beacon,
-    potential_block: Optional[Block],
+    block: Block,
     slot: int,
     our_active_val_index_to_pubkey: dict[int, str],
-    cumulated_our_ko_vals_index: set[int],
     rate_of_not_optimal_attestation_inclusion_gauge: Gauge,
-) -> set[int]:
+) -> None:
     """Handle missed attestaion detection
 
     Print log for our public keys which:
@@ -44,15 +42,6 @@ def handle_suboptimal_attestation_detection(
 
     rate_of_not_optimal_attestation_inclusion_gauge: Prometheus gauge
     """
-    if potential_block is None:
-        return cumulated_our_ko_vals_index
-
-    block = potential_block
-
-    # From here, `our_active_val_index_to_pubkey` cannot be `None`, but the linter
-    # does not get it.
-    assert our_active_val_index_to_pubkey is not None
-
     previous_slot = slot - 1
     epoch_of_previous_slot = previous_slot // NB_SLOT_PER_EPOCH
 
@@ -147,28 +136,3 @@ def handle_suboptimal_attestation_detection(
             f"({round(100 * our_nok_rate, 1)} %) had not optimal attestation "
             f"inclusion at slot {previous_slot}"
         )
-
-        our_reccurent_ko_vals_index = our_ko_vals_index & cumulated_our_ko_vals_index
-
-        if len(our_reccurent_ko_vals_index) > 0:
-            firsts_index = list(our_reccurent_ko_vals_index)[:5]
-
-            firsts_pubkey = (
-                our_active_val_index_to_pubkey[first_index]
-                for first_index in firsts_index
-            )
-
-            short_firsts_pubkey = [pubkey[:10] for pubkey in firsts_pubkey]
-            short_firsts_pubkey_str = ", ".join(short_firsts_pubkey)
-
-            print(
-                f"☠️  Our validator {short_firsts_pubkey_str} and "
-                f"{len(our_reccurent_ko_vals_index) - len(short_firsts_pubkey)} more "
-                f"had not optimal attestation at least 2 times in a raw"
-            )
-
-    new_cumulated_our_ko_vals_index = (
-        cumulated_our_ko_vals_index | our_ko_vals_index
-    ) - our_ok_vals_index
-
-    return new_cumulated_our_ko_vals_index

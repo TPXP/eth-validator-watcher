@@ -5,7 +5,14 @@ from requests import Session, codes
 from requests.adapters import HTTPAdapter, Retry
 from requests.exceptions import RetryError
 
-from .models import Block, Committees, ProposerDuties, Validators
+from .models import (
+    Block,
+    Committees,
+    ProposerDuties,
+    Validators,
+    ValidatorsLivenessRequest,
+    ValidatorsLivenessResponse,
+)
 from .utils import (
     aggregate_bools,
     convert_hex_to_bools,
@@ -31,7 +38,7 @@ class Beacon:
             "http://",
             HTTPAdapter(
                 max_retries=Retry(
-                    backoff_factor=1,
+                    backoff_factor=0.5,
                     total=3,
                     status_forcelist=[codes.not_found],
                 )
@@ -43,13 +50,13 @@ class Beacon:
 
         slot: Slot
         """
-        response = self.__http.get(f"{self.__url}/eth/v2/beacon/blocks/{slot}")
-
         try:
-            response.raise_for_status()
+            response = self.__http.get(f"{self.__url}/eth/v2/beacon/blocks/{slot}")
         except RetryError as e:
             # If we are here, it means the block does not exist
             raise NoBlockError from e
+
+        response.raise_for_status()
 
         block_dict = response.json()
         return Block(**block_dict)
@@ -129,6 +136,22 @@ class Beacon:
 
         return result
 
+    def get_validators_liveness(
+        self, epoch: int, validators_index: set[int]
+    ) -> dict[int, bool]:
+        response = self.__http.post(
+            f"{self.__url}/lighthouse/liveness",
+            json=ValidatorsLivenessRequest(
+                epoch=epoch, indices=list(validators_index)
+            ).dict(),
+        )
+
+        response.raise_for_status()
+        validators_liveness_dict = response.json()
+        validators_liveness = ValidatorsLivenessResponse(**validators_liveness_dict)
+
+        return {item.index: item.is_live for item in validators_liveness.data}
+
     def aggregate_attestations(self, block: Block, slot: int) -> dict[int, list[bool]]:
         """Aggregates all attestations for the slot `slot` that are presient
         in block `block`.
@@ -184,7 +207,9 @@ class Beacon:
             )
 
         # Finally, we aggregate all attestations
+        items = committee_index_to_list_of_aggregation_bools.items()
+
         return {
             committee_index: aggregate_bools(list_of_aggregation_bools)
-            for committee_index, list_of_aggregation_bools in committee_index_to_list_of_aggregation_bools.items()
+            for committee_index, list_of_aggregation_bools in items
         }

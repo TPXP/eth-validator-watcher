@@ -99,6 +99,20 @@ class ProposerDuties(BaseModel):
     data: list[Data]
 
 
+class ValidatorsLivenessRequest(BaseModel):
+    indices: list[int]
+    epoch: int
+
+
+class ValidatorsLivenessResponse(BaseModel):
+    class Data(BaseModel):
+        index: int
+        epoch: int
+        is_live: bool
+
+    data: list[Data]
+
+
 class SlotWithStatus(BaseModel):
     number: int
     missed: bool
