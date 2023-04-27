@@ -9,7 +9,10 @@ from sseclient import SSEClient
 from typer import Option
 
 from .beacon import Beacon, NoBlockError
-from .missed_attestations import handle_missed_attestations
+from .missed_attestations import (
+    handle_double_missed_attestations,
+    handle_missed_attestations,
+)
 from .missed_blocks import handle_missed_block_detection
 from .models import Block, EventBlock
 from .next_blocks_proposal import handle_next_blocks_proposal
@@ -92,17 +95,13 @@ def handler(
     beacon = Beacon(beacon_url)
     web3signers = {Web3Signer(web3signer_url) for web3signer_url in web3signer_urls}
 
+    our_pubkeys: set[str] = set()
+    our_active_index_to_pubkey: dict[int, str] = {}
+    dead_indexes: set[int] = set()
+    previous_dead_indexes: set[int] = set()
+
     previous_slot: Optional[int] = None
     previous_epoch: Optional[int] = None
-
-    our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
-
-    # Dict containing, for our active validators:
-    # - key  : Validator index
-    # - value: Validator pubkey
-    our_active_val_index_to_pubkey = beacon.get_active_validator_index_to_pubkey(
-        our_pubkeys
-    )
 
     for event in SSEClient(
         requests.get(
@@ -127,6 +126,26 @@ def handler(
 
         potential_block = get_potential_block(slot)
 
+        if previous_epoch is None or previous_epoch != epoch:
+            our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
+
+            our_active_index_to_pubkey = beacon.get_active_validator_index_to_pubkey(
+                our_pubkeys
+            )
+
+            handle_next_blocks_proposal(beacon, our_pubkeys, slot)
+
+            dead_indexes = handle_missed_attestations(
+                beacon, our_active_index_to_pubkey, epoch
+            )
+
+            handle_double_missed_attestations(
+                dead_indexes,
+                previous_dead_indexes,
+                our_active_index_to_pubkey,
+                epoch,
+            )
+
         handle_missed_block_detection(
             beacon,
             potential_block,
@@ -136,28 +155,16 @@ def handler(
             our_pubkeys,
         )
 
-        if previous_epoch is None or previous_epoch != epoch:
-            our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
-
-            our_active_val_index_to_pubkey = (
-                beacon.get_active_validator_index_to_pubkey(our_pubkeys)
-            )
-
-            handle_next_blocks_proposal(beacon, our_pubkeys, slot)
-
-            handle_missed_attestations(
-                beacon, our_active_val_index_to_pubkey, epoch - 1
-            )
-
         if potential_block is not None:
             handle_suboptimal_attestation(
                 beacon,
                 potential_block,
                 slot,
-                our_active_val_index_to_pubkey,
+                our_active_index_to_pubkey,
                 rate_of_not_optimal_attestation_inclusion_gauge,
             )
 
+        previous_dead_indexes = dead_indexes
         previous_slot = slot
         previous_epoch = epoch
 
