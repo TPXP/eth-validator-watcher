@@ -10,13 +10,17 @@ from .models import Block, SlotWithStatus
 
 print = functools.partial(print, flush=True)
 
+missed_block_proposals_count = Counter(
+    "missed_block_proposals_count",
+    "Missed block proposals_count",
+)
 
-def handle_missed_block_detection(
+
+def process_missed_blocks(
     beacon: Beacon,
     potential_block: Optional[Block],
     current_slot: int,
     previous_slot: Optional[int],
-    missed_block_proposals_counter: Counter,
     our_pubkeys: set[str],
 ) -> None:
     """Handle missed block proposals detection
@@ -82,4 +86,4 @@ def handle_missed_block_detection(
         print(message)
 
         if is_our_validator and slot_with_status.missed:
-            missed_block_proposals_counter.inc()
+            missed_block_proposals_count.inc()

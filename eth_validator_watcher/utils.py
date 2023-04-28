@@ -2,10 +2,16 @@ from pathlib import Path
 from typing import Any, Optional
 
 from more_itertools import chunked
+from prometheus_client import Gauge
 
 from .web3signer import Web3Signer
 
 NB_SLOT_PER_EPOCH = 32
+
+keys_count = Gauge(
+    "keys_count",
+    "Keys count",
+)
 
 
 def convert_hex_to_bools(hex: str) -> list[bool]:
@@ -153,7 +159,9 @@ def get_our_pubkeys(
         *(web3signer.load_pubkeys() for web3signer in web3signers)
     )
 
-    return pubkeys_from_file | pubkeys_from_web3signers
+    our_pubkeys = pubkeys_from_file | pubkeys_from_web3signers
+    keys_count.set(len(our_pubkeys))
+    return our_pubkeys
 
 
 def write_liveness_file(liveliness_file: Path):

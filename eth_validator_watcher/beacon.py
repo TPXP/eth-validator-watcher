@@ -1,5 +1,6 @@
 from collections import defaultdict
 from functools import lru_cache
+from prometheus_client import Gauge
 
 from requests import Session, codes
 from requests.adapters import HTTPAdapter, Retry
@@ -18,6 +19,11 @@ from .utils import (
     convert_hex_to_bools,
     remove_all_items_from_last_true,
     switch_endianness,
+)
+
+active_keys_count = Gauge(
+    "active_keys_count",
+    "Active keys count",
 )
 
 
@@ -76,7 +82,7 @@ class Beacon:
         proposer_duties_dict = response.json()
         return ProposerDuties(**proposer_duties_dict)
 
-    def get_active_validator_index_to_pubkey(self, pubkeys: set[str]) -> dict[int, str]:
+    def get_active_index_to_pubkey(self, pubkeys: set[str]) -> dict[int, str]:
         """Return a dictionnary with:
         key  : Index of validator
         value: Public key for validator
@@ -84,6 +90,7 @@ class Beacon:
         pubkeys: The set of validators pubkey to use.
         """
         if len(pubkeys) == 0:
+            active_keys_count.set(0)
             return {}
 
         response = self.__http.get(
@@ -99,11 +106,14 @@ class Beacon:
             Validators.DataItem.StatusEnum.activeExiting,
         }
 
-        return {
+        result = {
             item.index: item.validator.pubkey
             for item in validators.data
             if item.validator.pubkey in pubkeys and item.status in active_statuses
         }
+
+        active_keys_count.set(len(result))
+        return result
 
     @lru_cache(maxsize=1)
     def get_duty_slot_to_committee_index_to_validators_index(

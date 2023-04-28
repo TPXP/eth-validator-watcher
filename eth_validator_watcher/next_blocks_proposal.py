@@ -1,16 +1,23 @@
 import functools
 
+from prometheus_client import Gauge
+
 from .beacon import Beacon
 from .utils import NB_SLOT_PER_EPOCH
 
 print = functools.partial(print, flush=True)
 
+future_block_proposals_count = Gauge(
+    "future_block_proposals_count",
+    "Future block proposals_count",
+)
 
-def handle_next_blocks_proposal(
+
+def process_future_blocks_proposal(
     beacon: Beacon,
     our_pubkeys: set[str],
     slot: int,
-) -> int:
+) -> None:
     """Handle next blocks proposal
 
     Print one log for each of our key which is about to propose a block in the next
@@ -30,11 +37,16 @@ def handle_next_blocks_proposal(
         proposers_duties_current_epoch.data + proposers_duties_next_epoch.data
     )
 
-    for item in concatenated_data:
-        if item.pubkey in our_pubkeys and item.slot >= slot:
-            print(
-                f"💍 Our validator {item.pubkey[:10]} is going to propose a block "
-                f"at   slot {item.slot} (in {item.slot - slot} slots)"
-            )
+    filtered = [
+        item
+        for item in concatenated_data
+        if item.pubkey in our_pubkeys and item.slot >= slot
+    ]
 
-    return epoch
+    future_block_proposals_count.set(len(filtered))
+
+    for item in filtered:
+        print(
+            f"💍 Our validator {item.pubkey[:10]} is going to propose a block "
+            f"at   slot {item.slot} (in {item.slot - slot} slots)"
+        )

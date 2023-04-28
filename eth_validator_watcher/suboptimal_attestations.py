@@ -9,13 +9,17 @@ from .utils import NB_SLOT_PER_EPOCH, apply_mask
 
 print = functools.partial(print, flush=True)
 
+suboptimal_attestations_rate = Gauge(
+    "suboptimal_attestations_rate",
+    "Suboptimal attestations rate",
+)
 
-def handle_suboptimal_attestation(
+
+def process_suboptimal_attestations(
     beacon: Beacon,
     block: Block,
     slot: int,
     our_active_val_index_to_pubkey: dict[int, str],
-    rate_of_not_optimal_attestation_inclusion_gauge: Gauge,
 ) -> None:
     """Handle missed attestaion detection
 
@@ -116,7 +120,7 @@ def handle_suboptimal_attestation(
     )
 
     if our_nok_rate is not None:
-        rate_of_not_optimal_attestation_inclusion_gauge.set(100 * our_nok_rate)
+        suboptimal_attestations_rate.set(100 * our_nok_rate)
 
     if len(our_ko_vals_index) > 0:
         assert our_nok_rate is not None

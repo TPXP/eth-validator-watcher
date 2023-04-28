@@ -4,23 +4,26 @@ from typing import List, Optional
 
 import requests
 import typer
-from prometheus_client import Counter, Gauge, start_http_server
+from prometheus_client import Gauge, start_http_server
 from sseclient import SSEClient
 from typer import Option
 
 from .beacon import Beacon, NoBlockError
 from .missed_attestations import (
-    handle_double_missed_attestations,
-    handle_missed_attestations,
+    process_double_missed_attestations,
+    process_missed_attestations,
 )
-from .missed_blocks import handle_missed_block_detection
+from .missed_blocks import process_missed_blocks
 from .models import Block, EventBlock
-from .next_blocks_proposal import handle_next_blocks_proposal
-from .suboptimal_attestations import handle_suboptimal_attestation
+from .next_blocks_proposal import process_future_blocks_proposal
+from .suboptimal_attestations import process_suboptimal_attestations
 from .utils import NB_SLOT_PER_EPOCH, get_our_pubkeys, write_liveness_file
 from .web3signer import Web3Signer
 
 app = typer.Typer()
+
+slot_count = Gauge("slot", "Slot")
+epoch_count = Gauge("epoch", "Epoch")
 
 
 @app.command()
@@ -37,14 +40,6 @@ def handler(
         None, help="URL to web3signer managing keys to watch"
     ),
     liveness_file: Optional[Path] = Option(None, help="Liveness file"),
-    prometheus_probe_missed_block_proposals: str = Option(
-        "eth_validator_watcher_missed_block_proposals",
-        help="Prometheus probe name for missed block proposals",
-    ),
-    prometheus_probe_rate_of_not_optimal_attestation_inclusion: str = Option(
-        "eth_validator_watcher_rate_of_not_optimal_attestation_inclusion",
-        help="Prometheus probe name for rate of non optimal attestation inclusion",
-    ),
 ) -> None:
     """
     🚨 Be alerted when you miss a block proposal / when your attestations are late! 🚨
@@ -82,22 +77,12 @@ def handler(
     web3signer_urls = set(web3signer_url) if web3signer_url is not None else default_set
     start_http_server(8000)
 
-    missed_block_proposals_counter = Counter(
-        prometheus_probe_missed_block_proposals,
-        "Ethereum validator watcher missed block proposals",
-    )
-
-    rate_of_not_optimal_attestation_inclusion_gauge = Gauge(
-        prometheus_probe_rate_of_not_optimal_attestation_inclusion,
-        "Ethereum validator watcher rate of not optimal attestation inclusion",
-    )
-
     beacon = Beacon(beacon_url)
     web3signers = {Web3Signer(web3signer_url) for web3signer_url in web3signer_urls}
 
     our_pubkeys: set[str] = set()
     our_active_index_to_pubkey: dict[int, str] = {}
-    dead_indexes: set[int] = set()
+    our_dead_indexes: set[int] = set()
     previous_dead_indexes: set[int] = set()
 
     previous_slot: Optional[int] = None
@@ -115,6 +100,9 @@ def handler(
         slot = EventBlock(**data_dict).slot
         epoch = slot // NB_SLOT_PER_EPOCH
 
+        slot_count.set(slot)
+        epoch_count.set(epoch)
+
         def get_potential_block(slot) -> Optional[Block]:
             try:
                 return beacon.get_block(slot)
@@ -128,43 +116,38 @@ def handler(
 
         if previous_epoch is None or previous_epoch != epoch:
             our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
+            our_active_index_to_pubkey = beacon.get_active_index_to_pubkey(our_pubkeys)
 
-            our_active_index_to_pubkey = beacon.get_active_validator_index_to_pubkey(
-                our_pubkeys
-            )
-
-            handle_next_blocks_proposal(beacon, our_pubkeys, slot)
-
-            dead_indexes = handle_missed_attestations(
+            our_dead_indexes = process_missed_attestations(
                 beacon, our_active_index_to_pubkey, epoch
             )
 
-            handle_double_missed_attestations(
-                dead_indexes,
+            process_double_missed_attestations(
+                our_dead_indexes,
                 previous_dead_indexes,
                 our_active_index_to_pubkey,
                 epoch,
             )
 
-        handle_missed_block_detection(
+            process_future_blocks_proposal(beacon, our_pubkeys, slot)
+
+        process_missed_blocks(
             beacon,
             potential_block,
             slot,
             previous_slot,
-            missed_block_proposals_counter,
             our_pubkeys,
         )
 
         if potential_block is not None:
-            handle_suboptimal_attestation(
+            process_suboptimal_attestations(
                 beacon,
                 potential_block,
                 slot,
                 our_active_index_to_pubkey,
-                rate_of_not_optimal_attestation_inclusion_gauge,
             )
 
-        previous_dead_indexes = dead_indexes
+        previous_dead_indexes = our_dead_indexes
         previous_slot = slot
         previous_epoch = epoch
 

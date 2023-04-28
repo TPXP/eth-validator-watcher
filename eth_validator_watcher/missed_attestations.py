@@ -1,12 +1,24 @@
 import functools
 
+from prometheus_client import Gauge
+
 from .beacon import Beacon
 
 
 print = functools.partial(print, flush=True)
 
+missed_attestations_count = Gauge(
+    "missed_attestations_count",
+    "Missed attestations count",
+)
 
-def handle_missed_attestations(
+double_missed_attestations_count = Gauge(
+    "double_missed_attestations_count",
+    "Double missed attestations count",
+)
+
+
+def process_missed_attestations(
     beacon: Beacon, our_active_index_to_pubkey: dict[int, str], epoch: int
 ) -> set[int]:
     validators_index = set(our_active_index_to_pubkey)
@@ -15,6 +27,8 @@ def handle_missed_attestations(
     dead_indexes = {
         index for index, liveness in validators_liveness.items() if not liveness
     }
+
+    missed_attestations_count.set(len(dead_indexes))
 
     if len(dead_indexes) == 0:
         return set()
@@ -37,13 +51,15 @@ def handle_missed_attestations(
     return dead_indexes
 
 
-def handle_double_missed_attestations(
+def process_double_missed_attestations(
     dead_indexes: set[int],
     previous_dead_indexes: set[int],
     our_active_index_to_pubkey: dict[int, str],
     epoch: int,
 ) -> None:
     double_dead_indexes = dead_indexes & previous_dead_indexes
+
+    double_missed_attestations_count.set(len(double_dead_indexes))
 
     if len(double_dead_indexes) == 0:
         return
