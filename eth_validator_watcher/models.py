@@ -16,6 +16,11 @@ class Validators(BaseModel):
             withdrawalPossible = "withdrawal_possible"
             withdrawalDone = "withdrawal_done"
 
+            active = "active"
+            pending = "pending"
+            exited = "exited"
+            withdrawal = "withdrawal"
+
         class Validator(BaseModel):
             pubkey: str
 

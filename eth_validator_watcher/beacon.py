@@ -21,9 +21,14 @@ from .utils import (
     switch_endianness,
 )
 
-active_keys_count = Gauge(
-    "active_keys_count",
-    "Active keys count",
+our_active_validators_count = Gauge(
+    "our_active_validators_count",
+    "Our active validators count",
+)
+
+total_active_validators_count = Gauge(
+    "total_active_validators_count",
+    "Total active validators count",
 )
 
 
@@ -89,31 +94,25 @@ class Beacon:
 
         pubkeys: The set of validators pubkey to use.
         """
-        if len(pubkeys) == 0:
-            active_keys_count.set(0)
-            return {}
-
         response = self.__http.get(
             f"{self.__url}/eth/v1/beacon/states/head/validators",
+            params=dict(status=Validators.DataItem.StatusEnum.active),
         )
 
         response.raise_for_status()
         validators_dict = response.json()
         validators = Validators(**validators_dict)
 
-        active_statuses = {
-            Validators.DataItem.StatusEnum.activeOngoing,
-            Validators.DataItem.StatusEnum.activeExiting,
-        }
+        total_active_validators_count.set(len(validators.data))
 
-        result = {
+        our_active_keys = {
             item.index: item.validator.pubkey
             for item in validators.data
-            if item.validator.pubkey in pubkeys and item.status in active_statuses
+            if item.validator.pubkey in pubkeys
         }
 
-        active_keys_count.set(len(result))
-        return result
+        our_active_validators_count.set(len(our_active_keys))
+        return our_active_keys
 
     @lru_cache(maxsize=1)
     def get_duty_slot_to_committee_index_to_validators_index(
