@@ -103,6 +103,8 @@ def handler(
         slot_count.set(slot)
         epoch_count.set(epoch)
 
+        is_new_epoch = previous_epoch is None or previous_epoch != epoch
+
         def get_potential_block(slot) -> Optional[Block]:
             try:
                 return beacon.get_block(slot)
@@ -114,7 +116,7 @@ def handler(
 
         potential_block = get_potential_block(slot)
 
-        if previous_epoch is None or previous_epoch != epoch:
+        if is_new_epoch:
             our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
             our_active_index_to_pubkey = beacon.get_active_index_to_pubkey(our_pubkeys)
 
@@ -129,7 +131,7 @@ def handler(
                 epoch,
             )
 
-            process_future_blocks_proposal(beacon, our_pubkeys, slot)
+        process_future_blocks_proposal(beacon, our_pubkeys, slot, is_new_epoch)
 
         process_missed_blocks(
             beacon,

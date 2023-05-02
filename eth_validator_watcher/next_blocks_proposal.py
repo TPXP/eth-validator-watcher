@@ -17,6 +17,7 @@ def process_future_blocks_proposal(
     beacon: Beacon,
     our_pubkeys: set[str],
     slot: int,
+    is_new_epoch: bool,
 ) -> None:
     """Handle next blocks proposal
 
@@ -45,8 +46,9 @@ def process_future_blocks_proposal(
 
     future_block_proposals_count.set(len(filtered))
 
-    for item in filtered:
-        print(
-            f"💍 Our validator {item.pubkey[:10]} is going to propose a block "
-            f"at   slot {item.slot} (in {item.slot - slot} slots)"
-        )
+    if is_new_epoch:
+        for item in filtered:
+            print(
+                f"💍 Our validator {item.pubkey[:10]} is going to propose a block "
+                f"at   slot {item.slot} (in {item.slot - slot} slots)"
+            )
