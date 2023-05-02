@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -7,6 +8,8 @@ from prometheus_client import Gauge
 from .web3signer import Web3Signer
 
 NB_SLOT_PER_EPOCH = 32
+BLOCK_NOT_ORPHANED_TIME = timedelta(seconds=6)
+SLOT_FOR_MISSED_ATTESTATIONS_PROCESS = 16
 
 keys_count = Gauge(
     "keys_count",

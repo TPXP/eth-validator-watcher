@@ -1,5 +1,7 @@
 import json
+from datetime import datetime
 from pathlib import Path
+from time import sleep
 from typing import List, Optional
 
 import requests
@@ -17,7 +19,13 @@ from .missed_blocks import process_missed_blocks
 from .models import Block, EventBlock
 from .next_blocks_proposal import process_future_blocks_proposal
 from .suboptimal_attestations import process_suboptimal_attestations
-from .utils import NB_SLOT_PER_EPOCH, get_our_pubkeys, write_liveness_file
+from .utils import (
+    BLOCK_NOT_ORPHANED_TIME,
+    NB_SLOT_PER_EPOCH,
+    SLOT_FOR_MISSED_ATTESTATIONS_PROCESS,
+    get_our_pubkeys,
+    write_liveness_file,
+)
 from .web3signer import Web3Signer
 
 app = typer.Typer()
@@ -72,12 +80,23 @@ def handler(
 
     Prometheus server is automatically exposed on port 8000.
     """
+
     default_set: set[str] = set()
 
     web3signer_urls = set(web3signer_url) if web3signer_url is not None else default_set
     start_http_server(8000)
 
     beacon = Beacon(beacon_url)
+
+    def get_potential_block(slot) -> Optional[Block]:
+        try:
+            return beacon.get_block(slot)
+        except NoBlockError:
+            # The block is probably orphaned:
+            # The beacon saw the block (that's why we received the event) but it was
+            # orphaned before we could fetch it.
+            return None
+
     web3signers = {Web3Signer(web3signer_url) for web3signer_url in web3signer_urls}
 
     our_pubkeys: set[str] = set()
@@ -88,6 +107,8 @@ def handler(
     previous_slot: Optional[int] = None
     previous_epoch: Optional[int] = None
 
+    last_missed_attestations_process_epoch: Optional[int] = None
+
     for event in SSEClient(
         requests.get(
             f"{beacon_url}/eth/v1/events",
@@ -96,30 +117,35 @@ def handler(
             headers={"Accept": "text/event-stream"},
         )
     ).events():
+        time_slot_start = datetime.now()
+
         data_dict = json.loads(event.data)
         slot = EventBlock(**data_dict).slot
         epoch = slot // NB_SLOT_PER_EPOCH
+        slot_in_epoch = slot % NB_SLOT_PER_EPOCH
 
         slot_count.set(slot)
         epoch_count.set(epoch)
 
         is_new_epoch = previous_epoch is None or previous_epoch != epoch
 
-        def get_potential_block(slot) -> Optional[Block]:
-            try:
-                return beacon.get_block(slot)
-            except NoBlockError:
-                # The block is probably orphaned:
-                # The beacon saw the block (that's why we received the event) but it was
-                # orphaned before we could fetch it.
-                return None
-
-        potential_block = get_potential_block(slot)
-
         if is_new_epoch:
             our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
             our_active_index_to_pubkey = beacon.get_active_index_to_pubkey(our_pubkeys)
 
+        time_now = datetime.now()
+        delta = BLOCK_NOT_ORPHANED_TIME - (time_now - time_slot_start)
+        delta_secs = delta.total_seconds()
+
+        should_process_missed_attestations = (
+            last_missed_attestations_process_epoch is None
+            or (
+                last_missed_attestations_process_epoch != epoch
+                and slot_in_epoch >= SLOT_FOR_MISSED_ATTESTATIONS_PROCESS
+            )
+        )
+
+        if should_process_missed_attestations:
             our_dead_indexes = process_missed_attestations(
                 beacon, our_active_index_to_pubkey, epoch
             )
@@ -131,15 +157,13 @@ def handler(
                 epoch,
             )
 
+            last_missed_attestations_process_epoch = epoch
+
         process_future_blocks_proposal(beacon, our_pubkeys, slot, is_new_epoch)
 
-        process_missed_blocks(
-            beacon,
-            potential_block,
-            slot,
-            previous_slot,
-            our_pubkeys,
-        )
+        sleep(max(0, delta_secs))
+
+        potential_block = get_potential_block(slot)
 
         if potential_block is not None:
             process_suboptimal_attestations(
@@ -149,9 +173,20 @@ def handler(
                 our_active_index_to_pubkey,
             )
 
+        process_missed_blocks(
+            beacon,
+            potential_block,
+            slot,
+            previous_slot,
+            our_pubkeys,
+        )
+
         previous_dead_indexes = our_dead_indexes
         previous_slot = slot
         previous_epoch = epoch
+
+        if slot_in_epoch >= SLOT_FOR_MISSED_ATTESTATIONS_PROCESS:
+            should_process_missed_attestations = True
 
         if liveness_file is not None:
             write_liveness_file(liveness_file)
