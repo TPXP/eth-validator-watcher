@@ -143,8 +143,9 @@ def handler(
             our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
             our_active_index_to_pubkey = beacon.get_active_index_to_pubkey(our_pubkeys)
 
-        if previous_epoch is not None and previous_epoch != epoch:
-            print(f"🎂 Epoch      {epoch}      starts")
+        # if previous_epoch is not None and previous_epoch != epoch:
+        if previous_epoch != epoch:
+            print(f"🎂     Epoch     {epoch}     starts")
 
         time_now = datetime.now()
         delta = BLOCK_NOT_ORPHANED_TIME - (time_now - time_slot_start)

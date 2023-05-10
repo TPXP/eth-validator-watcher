@@ -178,10 +178,9 @@ def write_liveness_file(liveliness_file: Path):
 
 
 class Slack:
-    def __init__(self, channel: str, token: str) -> None:
+    def __init__(self, channel: str, token: str, client: Optional[WebClient]) -> None:
         self.__channel = channel
-        self.__token = token
+        self.__client = client or WebClient(token=token)
 
     def send_message(self, message: str) -> None:
-        client = WebClient(token=self.__token)
-        client.chat_postMessage(channel=self.__channel, text=message)
+        self.__client.chat_postMessage(channel=self.__channel, text=message)

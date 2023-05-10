@@ -27,6 +27,11 @@ our_active_validators_count = Gauge(
     "Our active validators count",
 )
 
+our_pending_validators_count = Gauge(
+    "our_pending_validators_count",
+    "Our pending validators count",
+)
+
 total_active_validators_count = Gauge(
     "total_active_validators_count",
     "Total active validators count",
@@ -106,14 +111,32 @@ class Beacon:
 
         total_active_validators_count.set(len(validators.data))
 
-        our_active_keys = {
+        our_active_index_to_pubkey = {
             item.index: item.validator.pubkey
             for item in validators.data
             if item.validator.pubkey in pubkeys
         }
 
-        our_active_validators_count.set(len(our_active_keys))
-        return our_active_keys
+        our_active_validators_count.set(len(our_active_index_to_pubkey))
+
+        response = self.__http.get(
+            f"{self.__url}/eth/v1/beacon/states/head/validators",
+            params=dict(status=Validators.DataItem.StatusEnum.pending),
+        )
+
+        response.raise_for_status()
+        validators_dict = response.json()
+        validators = Validators(**validators_dict)
+
+        our_pending_pubkeys = {
+            item.validator.pubkey
+            for item in validators.data
+            if item.validator.pubkey in pubkeys
+        }
+
+        our_pending_validators_count.set(len(our_pending_pubkeys))
+
+        return our_active_index_to_pubkey
 
     @lru_cache(maxsize=1)
     def get_duty_slot_to_committee_index_to_validators_index(
