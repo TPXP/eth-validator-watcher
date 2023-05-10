@@ -3,7 +3,7 @@ from typing import Optional
 
 from prometheus_client import Counter
 
-from eth_validator_watcher.utils import NB_SLOT_PER_EPOCH
+from .utils import NB_SLOT_PER_EPOCH, Slack
 
 from .beacon import Beacon
 from .models import Block, SlotWithStatus
@@ -22,6 +22,7 @@ def process_missed_blocks(
     current_slot: int,
     previous_slot: Optional[int],
     our_pubkeys: set[str],
+    slack: Optional[Slack],
 ) -> None:
     """Handle missed block proposals detection
 
@@ -39,7 +40,7 @@ def process_missed_blocks(
     previous_slot = current_slot - 1 if previous_slot is None else previous_slot
 
     slots_with_status = [
-        SlotWithStatus(number=slot, missed=True)
+        SlotWithStatus(number=slot, missed=beacon.get_potential_block(slot) is None)
         for slot in range(previous_slot + 1, current_slot)
     ] + [SlotWithStatus(number=current_slot, missed=potential_block is None)]
 
@@ -66,7 +67,6 @@ def process_missed_blocks(
         is_our_validator = proposer_pubkey in our_pubkeys
         positive_emoji = "✨" if is_our_validator else "✅"
         negative_emoji = "❌" if is_our_validator else "💩"
-        birthday = " - 🎂" if current_slot % NB_SLOT_PER_EPOCH == 0 else ""
 
         emoji, proposed_or_missed = (
             (negative_emoji, "missed  ")
@@ -76,14 +76,23 @@ def process_missed_blocks(
 
         short_proposer_pubkey = proposer_pubkey[:10]
 
-        message = (
+        message_console = (
             f"{emoji} {'Our ' if is_our_validator else '    '}validator "
             f"{short_proposer_pubkey} {proposed_or_missed} block at epoch {epoch} - "
             f"slot {slot_with_status.number} {emoji} - 🔑 {len(our_pubkeys)} keys "
-            f"watched{birthday}"
+            "watched"
         )
 
-        print(message)
+        print(message_console)
+
+        if slack is not None and slot_with_status.missed and is_our_validator:
+            message_slack = (
+                f"{emoji} {'Our ' if is_our_validator else '    '}validator "
+                f"`{short_proposer_pubkey}` {proposed_or_missed} block at epoch `{epoch}` - "
+                f"slot `{slot_with_status.number}` {emoji}"
+            )
+
+            slack.send_message(message_slack)
 
         if is_our_validator and slot_with_status.missed:
             missed_block_proposals_count.inc()

@@ -1,6 +1,9 @@
 import functools
+from typing import Optional
 
 from prometheus_client import Gauge
+
+from .utils import Slack
 
 from .beacon import Beacon
 
@@ -19,7 +22,9 @@ double_missed_attestations_count = Gauge(
 
 
 def process_missed_attestations(
-    beacon: Beacon, our_active_index_to_pubkey: dict[int, str], epoch: int
+    beacon: Beacon,
+    our_active_index_to_pubkey: dict[int, str],
+    epoch: int,
 ) -> set[int]:
     validators_index = set(our_active_index_to_pubkey)
     validators_liveness = beacon.get_validators_liveness(epoch - 1, validators_index)
@@ -56,6 +61,7 @@ def process_double_missed_attestations(
     previous_dead_indexes: set[int],
     our_active_index_to_pubkey: dict[int, str],
     epoch: int,
+    slack: Optional[Slack],
 ) -> None:
     double_dead_indexes = dead_indexes & previous_dead_indexes
 
@@ -73,8 +79,19 @@ def process_double_missed_attestations(
     short_first_pubkeys = [pubkey[:10] for pubkey in first_pubkeys]
     short_first_pubkeys_str = ", ".join(short_first_pubkeys)
 
-    print(
+    message_console = (
         f"😱  Our validator {short_first_pubkeys_str} and "
         f"{len(double_dead_indexes) - len(short_first_pubkeys)} more "
         f"missed 2 attestations in a raw from epoch {epoch - 2}"
     )
+
+    print(message_console)
+
+    if slack is not None:
+        message_slack = (
+            f"😱  Our validator `{short_first_pubkeys_str}` and "
+            f"`{len(double_dead_indexes) - len(short_first_pubkeys)}` more "
+            f"missed 2 attestations in a raw from epoch `{epoch - 2}`"
+        )
+
+        slack.send_message(message_slack)

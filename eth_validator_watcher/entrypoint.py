@@ -10,13 +10,13 @@ from prometheus_client import Gauge, start_http_server
 from sseclient import SSEClient
 from typer import Option
 
-from .beacon import Beacon, NoBlockError
+from .beacon import Beacon
 from .missed_attestations import (
     process_double_missed_attestations,
     process_missed_attestations,
 )
 from .missed_blocks import process_missed_blocks
-from .models import Block, EventBlock
+from .models import EventBlock
 from .next_blocks_proposal import process_future_blocks_proposal
 from .suboptimal_attestations import process_suboptimal_attestations
 from .utils import (
@@ -27,6 +27,9 @@ from .utils import (
     write_liveness_file,
 )
 from .web3signer import Web3Signer
+from .utils import Slack
+from os import environ
+
 
 app = typer.Typer()
 
@@ -46,6 +49,9 @@ def handler(
     ),
     web3signer_url: Optional[List[str]] = Option(
         None, help="URL to web3signer managing keys to watch"
+    ),
+    slack_channel: Optional[str] = Option(
+        None, help="Slack channel to send alerts - SLACK_TOKEN env var must be set"
     ),
     liveness_file: Optional[Path] = Option(None, help="Liveness file"),
 ) -> None:
@@ -81,21 +87,25 @@ def handler(
     Prometheus server is automatically exposed on port 8000.
     """
 
+    slack_token = environ.get("SLACK_TOKEN")
+
+    if slack_channel is not None and slack_token is None:
+        raise typer.BadParameter(
+            "SLACK_TOKEN env var must be set if you want to use slack_channel"
+        )
+
+    slack = (
+        Slack(slack_channel, slack_token)
+        if slack_channel is not None and slack_token is not None
+        else None
+    )
+
     default_set: set[str] = set()
 
     web3signer_urls = set(web3signer_url) if web3signer_url is not None else default_set
     start_http_server(8000)
 
     beacon = Beacon(beacon_url)
-
-    def get_potential_block(slot) -> Optional[Block]:
-        try:
-            return beacon.get_block(slot)
-        except NoBlockError:
-            # The block is probably orphaned:
-            # The beacon saw the block (that's why we received the event) but it was
-            # orphaned before we could fetch it.
-            return None
 
     web3signers = {Web3Signer(web3signer_url) for web3signer_url in web3signer_urls}
 
@@ -133,6 +143,9 @@ def handler(
             our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
             our_active_index_to_pubkey = beacon.get_active_index_to_pubkey(our_pubkeys)
 
+        if previous_epoch is not None and previous_epoch != epoch:
+            print(f"🎂 Epoch      {epoch}      starts")
+
         time_now = datetime.now()
         delta = BLOCK_NOT_ORPHANED_TIME - (time_now - time_slot_start)
         delta_secs = delta.total_seconds()
@@ -155,6 +168,7 @@ def handler(
                 previous_dead_indexes,
                 our_active_index_to_pubkey,
                 epoch,
+                slack,
             )
 
             last_missed_attestations_process_epoch = epoch
@@ -163,7 +177,7 @@ def handler(
 
         sleep(max(0, delta_secs))
 
-        potential_block = get_potential_block(slot)
+        potential_block = beacon.get_potential_block(slot)
 
         if potential_block is not None:
             process_suboptimal_attestations(
@@ -179,6 +193,7 @@ def handler(
             slot,
             previous_slot,
             our_pubkeys,
+            slack,
         )
 
         previous_dead_indexes = our_dead_indexes

@@ -1,5 +1,6 @@
 from collections import defaultdict
 from functools import lru_cache
+from typing import Optional
 from prometheus_client import Gauge
 
 from requests import Session, codes
@@ -222,3 +223,12 @@ class Beacon:
             committee_index: aggregate_bools(list_of_aggregation_bools)
             for committee_index, list_of_aggregation_bools in items
         }
+
+    def get_potential_block(self, slot) -> Optional[Block]:
+        try:
+            return self.get_block(slot)
+        except NoBlockError:
+            # The block is probably orphaned:
+            # The beacon saw the block (that's why we received the event) but it was
+            # orphaned before we could fetch it.
+            return None

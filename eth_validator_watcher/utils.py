@@ -4,6 +4,8 @@ from typing import Any, Optional
 
 from more_itertools import chunked
 from prometheus_client import Gauge
+from slack_sdk import WebClient
+
 
 from .web3signer import Web3Signer
 
@@ -173,3 +175,13 @@ def write_liveness_file(liveliness_file: Path):
 
     with liveliness_file.open("w") as file_descriptor:
         file_descriptor.write("OK")
+
+
+class Slack:
+    def __init__(self, channel: str, token: str) -> None:
+        self.__channel = channel
+        self.__token = token
+
+    def send_message(self, message: str) -> None:
+        client = WebClient(token=self.__token)
+        client.chat_postMessage(channel=self.__channel, text=message)
