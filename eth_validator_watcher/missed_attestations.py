@@ -1,3 +1,4 @@
+from typing import Set
 import functools
 from typing import Optional
 
@@ -62,15 +63,15 @@ def process_double_missed_attestations(
     our_active_index_to_pubkey: dict[int, str],
     epoch: int,
     slack: Optional[Slack],
-) -> None:
+) -> Set[int]:
     double_dead_indexes = dead_indexes & previous_dead_indexes
 
     double_missed_attestations_count.set(len(double_dead_indexes))
 
     if len(double_dead_indexes) == 0:
-        return
+        return set()
 
-    first_indexes = list(dead_indexes)[:5]
+    first_indexes = list(double_dead_indexes)[:5]
 
     first_pubkeys = (
         our_active_index_to_pubkey[first_index] for first_index in first_indexes
@@ -95,3 +96,5 @@ def process_double_missed_attestations(
         )
 
         slack.send_message(message_slack)
+
+    return double_dead_indexes

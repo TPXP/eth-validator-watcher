@@ -18,7 +18,7 @@ def process_future_blocks_proposal(
     our_pubkeys: set[str],
     slot: int,
     is_new_epoch: bool,
-) -> None:
+) -> int:
     """Handle next blocks proposal
 
     Print one log for each of our key which is about to propose a block in the next
@@ -52,3 +52,5 @@ def process_future_blocks_proposal(
                 f"💍 Our validator {item.pubkey[:10]} is going to propose a block "
                 f"at   slot {item.slot} (in {item.slot - slot} slots)"
             )
+
+    return len(filtered)

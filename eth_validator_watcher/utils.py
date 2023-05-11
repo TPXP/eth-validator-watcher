@@ -169,11 +169,11 @@ def get_our_pubkeys(
     return our_pubkeys
 
 
-def write_liveness_file(liveliness_file: Path):
-    """Overwrite liveliness file"""
-    liveliness_file.parent.mkdir(exist_ok=True, parents=True)
+def write_liveness_file(liveness_file: Path):
+    """Write liveness file"""
+    liveness_file.parent.mkdir(exist_ok=True, parents=True)
 
-    with liveliness_file.open("w") as file_descriptor:
+    with liveness_file.open("w") as file_descriptor:
         file_descriptor.write("OK")
 
 
