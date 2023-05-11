@@ -121,3 +121,11 @@ class ValidatorsLivenessResponse(BaseModel):
 class SlotWithStatus(BaseModel):
     number: int
     missed: bool
+
+
+class CoinbaseTrade(BaseModel):
+    time: str
+    trade_id: int
+    price: float
+    size: float
+    side: str

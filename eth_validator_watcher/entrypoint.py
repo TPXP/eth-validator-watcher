@@ -11,6 +11,7 @@ from sseclient import SSEClient
 from typer import Option
 
 from .beacon import Beacon
+from .coinbase import Coinbase
 from .missed_attestations import (
     process_double_missed_attestations,
     process_missed_attestations,
@@ -33,8 +34,8 @@ from os import environ
 
 app = typer.Typer()
 
-slot_count = Gauge("slot", "Slot")
-epoch_count = Gauge("epoch", "Epoch")
+slot_gauge = Gauge("slot", "Slot")
+epoch_gauge = Gauge("epoch", "Epoch")
 
 
 @app.command()
@@ -106,6 +107,7 @@ def handler(
     start_http_server(8000)
 
     beacon = Beacon(beacon_url)
+    coinbase = Coinbase()
 
     web3signers = {Web3Signer(web3signer_url) for web3signer_url in web3signer_urls}
 
@@ -134,14 +136,15 @@ def handler(
         epoch = slot // NB_SLOT_PER_EPOCH
         slot_in_epoch = slot % NB_SLOT_PER_EPOCH
 
-        slot_count.set(slot)
-        epoch_count.set(epoch)
+        slot_gauge.set(slot)
+        epoch_gauge.set(epoch)
 
         is_new_epoch = previous_epoch is None or previous_epoch != epoch
 
         if is_new_epoch:
             our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
             our_active_index_to_pubkey = beacon.get_active_index_to_pubkey(our_pubkeys)
+            coinbase.emit_eth_usd_conversion_rate()
 
         if previous_epoch is not None and previous_epoch != epoch:
             print(f"🎂     Epoch     {epoch}     starts")
