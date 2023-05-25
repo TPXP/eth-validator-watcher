@@ -16,11 +16,12 @@ def test_process_missed_blocks_previous_slot_none() -> None:
             assert epoch == 0
 
             return ProposerDuties(
+                dependent_root="0xfff",
                 data=[
                     ProposerDuties.Data(pubkey="0xaaa", validator_index=0, slot=0),
                     ProposerDuties.Data(pubkey="0xbbb", validator_index=1, slot=1),
                     ProposerDuties.Data(pubkey="0xccc", validator_index=2, slot=2),
-                ]
+                ],
             )
 
     counter_before = missed_block_proposals_count.collect()[0].samples[0].value  # type: ignore
@@ -38,12 +39,13 @@ def test_process_missed_blocks_previous_slot_far_away() -> None:
             assert epoch == 0
 
             return ProposerDuties(
+                dependent_root="0xfff",
                 data=[
                     ProposerDuties.Data(pubkey="0xaaa", validator_index=0, slot=0),
                     ProposerDuties.Data(pubkey="0xbbb", validator_index=1, slot=1),
                     ProposerDuties.Data(pubkey="0xccc", validator_index=2, slot=2),
                     ProposerDuties.Data(pubkey="0xddd", validator_index=3, slot=3),
-                ]
+                ],
             )
 
         @staticmethod
@@ -70,12 +72,13 @@ def test_process_missed_blocks_previous_slot_far_away_2() -> None:
             assert epoch == 0
 
             return ProposerDuties(
+                dependent_root="0xfff",
                 data=[
                     ProposerDuties.Data(pubkey="0xaaa", validator_index=0, slot=0),
                     ProposerDuties.Data(pubkey="0xbbb", validator_index=1, slot=1),
                     ProposerDuties.Data(pubkey="0xccc", validator_index=2, slot=2),
                     ProposerDuties.Data(pubkey="0xddd", validator_index=3, slot=3),
-                ]
+                ],
             )
 
         @staticmethod

@@ -7,10 +7,16 @@ class Beacon:
     def get_proposer_duties(epoch: int) -> ProposerDuties:
         return {
             42: ProposerDuties(
-                data=[ProposerDuties.Data(pubkey="0xaaa", validator_index=0, slot=1344)]
+                dependent_root="0xfff",
+                data=[
+                    ProposerDuties.Data(pubkey="0xaaa", validator_index=0, slot=1344)
+                ],
             ),
             43: ProposerDuties(
-                data=[ProposerDuties.Data(pubkey="0xbbb", validator_index=1, slot=1376)]
+                dependent_root="0xfff",
+                data=[
+                    ProposerDuties.Data(pubkey="0xbbb", validator_index=1, slot=1376)
+                ],
             ),
         }[epoch]
 

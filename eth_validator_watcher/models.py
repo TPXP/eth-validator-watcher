@@ -101,6 +101,7 @@ class ProposerDuties(BaseModel):
         validator_index: int
         slot: int
 
+    dependent_root: str
     data: list[Data]
 
 

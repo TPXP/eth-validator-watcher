@@ -144,6 +144,7 @@ def handler(
         if is_new_epoch:
             our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
             our_active_index_to_pubkey = beacon.get_active_index_to_pubkey(our_pubkeys)
+            beacon.get_pending_index_to_pubkey(our_pubkeys)
             coinbase.emit_eth_usd_conversion_rate()
 
         if previous_epoch is not None and previous_epoch != epoch:

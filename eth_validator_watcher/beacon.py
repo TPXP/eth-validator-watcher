@@ -119,6 +119,15 @@ class Beacon:
 
         our_active_validators_count.set(len(our_active_index_to_pubkey))
 
+        return our_active_index_to_pubkey
+
+    def get_pending_index_to_pubkey(self, pubkeys: set[str]) -> dict[int, str]:
+        """Return a dictionnary with:
+        key  : Index of validator
+        value: Public key for validator
+
+        pubkeys: The set of validators pubkey to use.
+        """
         response = self.__http.get(
             f"{self.__url}/eth/v1/beacon/states/head/validators",
             params=dict(status=Validators.DataItem.StatusEnum.pending),
@@ -128,15 +137,15 @@ class Beacon:
         validators_dict = response.json()
         validators = Validators(**validators_dict)
 
-        our_pending_pubkeys = {
-            item.validator.pubkey
+        our_pending_index_to_pubkey = {
+            item.index: item.validator.pubkey
             for item in validators.data
             if item.validator.pubkey in pubkeys
         }
 
-        our_pending_validators_count.set(len(our_pending_pubkeys))
+        our_pending_validators_count.set(len(our_pending_index_to_pubkey))
 
-        return our_active_index_to_pubkey
+        return our_pending_index_to_pubkey
 
     @lru_cache(maxsize=1)
     def get_duty_slot_to_committee_index_to_validators_index(
@@ -175,7 +184,7 @@ class Beacon:
         response = self.__http.post(
             f"{self.__url}/lighthouse/liveness",
             json=ValidatorsLivenessRequest(
-                epoch=epoch, indices=list(validators_index)
+                epoch=epoch, indices=sorted(list(validators_index))
             ).dict(),
         )
 

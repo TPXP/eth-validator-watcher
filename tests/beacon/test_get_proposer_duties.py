@@ -1,13 +1,12 @@
-import json
-from pathlib import Path
-
-import requests_mock
-from eth_validator_watcher.beacon import Beacon
-from eth_validator_watcher.models import ProposerDuties
 from tests.beacon import assets
+from pathlib import Path
+import json
+from eth_validator_watcher.models import ProposerDuties
+from requests_mock import Mocker
+from eth_validator_watcher.beacon import Beacon
 
 
-def test_get_proposer_duties():
+def test_():
     beacon_url = "http://beacon:5052"
 
     proposer_duties_path = Path(assets.__file__).parent / "proposer_duties.json"
@@ -36,7 +35,7 @@ def test_get_proposer_duties():
         ],
     )
 
-    with requests_mock.Mocker() as mock:
+    with Mocker() as mock:
         mock.get(
             f"{beacon_url}/eth/v1/validator/duties/proposer/6542", json=proposer_duties
         )

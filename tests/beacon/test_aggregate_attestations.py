@@ -4,11 +4,11 @@ from pathlib import Path
 import requests_mock
 from eth_validator_watcher.beacon import Beacon
 from tests.beacon import assets
+from eth_validator_watcher.models import Block
 
 
-def test_aggregate_attestations_from_previous_slot():
+def test_aggregate_attestations():
     beacon_url = "http://beacon:5052"
-    slot = 4839775
     block_path = Path(assets.__file__).parent / "block.json"
 
     expected = {
@@ -71,10 +71,10 @@ def test_aggregate_attestations_from_previous_slot():
     }
 
     with block_path.open() as file_descriptor:
-        block = json.load(file_descriptor)
+        block_dict = json.load(file_descriptor)
+
+    block = Block(**block_dict)
 
     with requests_mock.Mocker() as mock:
-        mock.get(f"{beacon_url}/eth/v2/beacon/blocks/{slot}", json=block)
         beacon = Beacon(beacon_url)
-
-        assert beacon.aggregate_attestations_from_previous_slot(slot) == expected
+        assert beacon.aggregate_attestations(block, 4839774) == expected
