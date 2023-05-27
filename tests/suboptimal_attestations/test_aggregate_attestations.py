@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import requests_mock
-from eth_validator_watcher.beacon import Beacon
+from eth_validator_watcher.suboptimal_attestations import aggregate_attestations
 from tests.beacon import assets
 from eth_validator_watcher.models import Block
 
@@ -76,5 +76,4 @@ def test_aggregate_attestations():
     block = Block(**block_dict)
 
     with requests_mock.Mocker() as mock:
-        beacon = Beacon(beacon_url)
-        assert beacon.aggregate_attestations(block, 4839774) == expected
+        assert aggregate_attestations(block, 4839774) == expected

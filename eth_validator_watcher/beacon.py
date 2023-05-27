@@ -194,68 +194,6 @@ class Beacon:
 
         return {item.index: item.is_live for item in validators_liveness.data}
 
-    def aggregate_attestations(self, block: Block, slot: int) -> dict[int, list[bool]]:
-        """Aggregates all attestations for the slot `slot` that are presient
-        in block `block`.
-        key  : Committee index
-        value: A list of boolean
-
-        Each boolean of the list corresponds to a validator in the given committee.
-        If the validator attestation from the previous slot is included in the current
-        slot, the boolean is True. Else, it is False.
-
-        block: Block
-        slot: Slot
-        """
-        filtered_attestations = (
-            attestation
-            for attestation in block.data.message.body.attestations
-            if attestation.data.slot == slot
-        )
-
-        # TODO: Write this code with dict comprehension
-        committee_index_to_list_of_aggregation_bools: dict[
-            int, list[list[bool]]
-        ] = defaultdict(list)
-
-        for attestation in filtered_attestations:
-            aggregated_bits_little_endian_with_last_bit = attestation.aggregation_bits
-
-            # Aggregations bits are given under binary (hexadecimal) shape.
-            # We convert bytes to booleans.
-            aggregated_bools_little_endian_with_last_bit = convert_hex_to_bools(
-                aggregated_bits_little_endian_with_last_bit
-            )
-
-            # Aggregations bits are represented in little endian shape.
-            # However, validators in committees are listed in big endian shape.
-            # We switch endianness
-            aggregated_bools_with_last_bit = switch_endianness(
-                aggregated_bools_little_endian_with_last_bit
-            )
-
-            # Aggregations bits in a given committee are represented with one bit for
-            # one validator. The number of validators bit is always a multiple of 8,
-            # even if the number of validators is not a multiple of 8.
-            # The last `1` (or last `True` in our boolean list) represents the boundary.
-            # All following `0`s can be ignored, as they do not represent validators
-            # As a consequence, we remove the last `1` and all following `0`s
-            aggregated_bools = remove_all_items_from_last_true(
-                aggregated_bools_with_last_bit
-            )
-
-            committee_index_to_list_of_aggregation_bools[attestation.data.index].append(
-                aggregated_bools
-            )
-
-        # Finally, we aggregate all attestations
-        items = committee_index_to_list_of_aggregation_bools.items()
-
-        return {
-            committee_index: aggregate_bools(list_of_aggregation_bools)
-            for committee_index, list_of_aggregation_bools in items
-        }
-
     def get_potential_block(self, slot) -> Optional[Block]:
         try:
             return self.get_block(slot)

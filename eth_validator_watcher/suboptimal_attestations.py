@@ -1,3 +1,4 @@
+from collections import defaultdict
 import functools
 
 from prometheus_client import Gauge
@@ -7,9 +8,16 @@ from .models import Block
 from .beacon import Beacon
 from .utils import NB_SLOT_PER_EPOCH, apply_mask
 
+from .utils import (
+    aggregate_bools,
+    convert_hex_to_bools,
+    remove_all_items_from_last_true,
+    switch_endianness,
+)
+
 print = functools.partial(print, flush=True)
 
-suboptimal_attestations_rate = Gauge(
+suboptimal_attestations_rate_gauge = Gauge(
     "suboptimal_attestations_rate",
     "Suboptimal attestations rate",
 )
@@ -19,124 +27,196 @@ def process_suboptimal_attestations(
     beacon: Beacon,
     block: Block,
     slot: int,
-    our_active_val_index_to_pubkey: dict[int, str],
-) -> None:
-    """Handle missed attestaion detection
+    our_active_validators_index_to_pubkey: dict[int, str],
+) -> set[int]:
+    """Process sub-optimal attestations
 
-    Print log for our public keys which:
-    - Did not attested correctly during the last epoch
-    - Did not attested correctly during the last two epochs
-
-    Update prometheus probes for our public keys which:
-    - Did not attested correctly during the last epoch
-    - Did not attested correctly during the last two epochs
-
-    Returns a set containing our validator pubkeys with suboptimal attestation inclusion
-    during the last epoch
+    Print a log and update a prometheus probe for our public keys that did not attested
+    optimally during the last epoch.
 
     beacon     : Beacon
     slot       : Slot
 
-    our_active_val_index_to_pubkey (Optional): dictionnary with:
+    our_active_validators_index_to_pubkey: dictionnary with:
       - key  : index of our active validator
       - value: public key of our active validator
-
-    cumulated_our_ko_vals_index: A set containing our validator pubkeys with suboptimal
-                                 attestation inclusion during the last epoch
-
-    rate_of_not_optimal_attestation_inclusion_gauge: Prometheus gauge
     """
     previous_slot = slot - 1
+
+    # Epoch of previous slot is NOT the previous epoch, but really the epoch
+    # corresponding to the previous slot.
     epoch_of_previous_slot = previous_slot // NB_SLOT_PER_EPOCH
 
     # All our active validators index
-    our_active_vals_index = set(our_active_val_index_to_pubkey.keys())
+    our_active_validators_index = set(our_active_validators_index_to_pubkey)
 
-    # Nested dict.
+    # Nested dictionary
     # - Key of the outer dict is the slot
-    # - Key of the inner dict is the committee index
-    # - Value of the inner dict is the list of validators index which have to attest
-    #   for the given slot and the given committee index
-    duty_slot_to_committee_index_to_vals_index: dict[
+    # - Value of the outer dict (which is key of the inner dict) is the committee index
+    # - Value of the inner dict is the list of validators index that have to attest
+    #   during the given slot and for the given committee index
+    duty_slot_to_committee_index_to_validators_index: dict[
         int, dict[int, list[int]]
     ] = beacon.get_duty_slot_to_committee_index_to_validators_index(
         epoch_of_previous_slot
     )
 
-    # Dict where key is committee index and value is the list of validators
-    # index which had to attest for the previous slot
-    duty_committee_index_to_validators_index = (
-        duty_slot_to_committee_index_to_vals_index[previous_slot]
+    # Dictionary where key is committee index and value is the list of validators
+    # index that had to attest during the previous slot
+    duty_committee_index_to_validators_index_during_previous_slot = (
+        duty_slot_to_committee_index_to_validators_index[previous_slot]
     )
 
-    # Index of validators which had to attest for the previous slot
-    duty_vals_index: set[int] = set().union(
-        *duty_committee_index_to_validators_index.values()
+    # Index of validators that had to attest during the previous slot
+    validators_index_that_had_to_attest_during_previous_slot = set(
+        (
+            item
+            for sublist in duty_committee_index_to_validators_index_during_previous_slot.values()
+            for item in sublist
+        )
     )
 
-    # Index ouf our validators which had to attest for the previous slot
-    our_duty_vals_index = duty_vals_index & our_active_vals_index
-
-    # ---------------------
-    # To refactor from here
-
-    previous_slot_duty_committies_index = duty_slot_to_committee_index_to_vals_index[
-        previous_slot
-    ]
-
-    actual_committee_index_to_validator_attestation_success = (
-        beacon.aggregate_attestations(block, previous_slot)
+    # Index ouf our validators that had to attest during the previous slot
+    our_validators_index_that_had_to_attest_during_previous_slot = (
+        validators_index_that_had_to_attest_during_previous_slot
+        & our_active_validators_index
     )
 
-    list_of_ok_vals_index = (
+    # Dictionary
+    # - Key is the committee index
+    # - Value is a list of boolean where each boolean indicates if the validator
+    #   attested optimally
+    committee_index_to_validator_attestation_success = aggregate_attestations(
+        block, previous_slot
+    )
+
+    list_of_validators_index_that_attested_optimally_during_previous_slot = (
         apply_mask(
-            previous_slot_duty_committies_index[actual_committee_index],
+            duty_committee_index_to_validators_index_during_previous_slot[
+                actual_committee_index
+            ],
             validator_attestation_success,
         )
         for (
             actual_committee_index,
             validator_attestation_success,
-        ) in actual_committee_index_to_validator_attestation_success.items()
+        ) in committee_index_to_validator_attestation_success.items()
     )
-
-    # To refactor until here
-    # ----------------------
 
     # Index of validators which actually attested for the previous slot
-    ok_vals_index: set[int] = set(
-        item for sublist in list_of_ok_vals_index for item in sublist
+    validators_index_that_attested_optimally_during_previous_slot: set[int] = set(
+        item
+        for sublist in list_of_validators_index_that_attested_optimally_during_previous_slot
+        for item in sublist
     )
 
-    # Index of our validators which actually attested for the previous slot
-    our_ok_vals_index = ok_vals_index & our_duty_vals_index
+    # Index of our validators that attested optimally during the previous slot
+    our_validators_index_that_attested_optimally_during_previous_slot = (
+        validators_index_that_attested_optimally_during_previous_slot
+        & our_validators_index_that_had_to_attest_during_previous_slot
+    )
 
-    # Index of our validators which failed to attest for the previous slot
-    our_ko_vals_index = our_duty_vals_index - our_ok_vals_index
+    # Index of our validators which failed to attest optimally during the previous slot
+    our_validators_index_that_did_not_attest_optimally_during_previous_slot = (
+        our_validators_index_that_had_to_attest_during_previous_slot
+        - our_validators_index_that_attested_optimally_during_previous_slot
+    )
 
-    our_nok_rate = (
-        len(our_ko_vals_index) / len(our_duty_vals_index)
-        if len(our_duty_vals_index) != 0
+    suboptimal_attestations_rate = (
+        len(our_validators_index_that_did_not_attest_optimally_during_previous_slot)
+        / len(our_validators_index_that_had_to_attest_during_previous_slot)
+        if len(our_validators_index_that_had_to_attest_during_previous_slot) != 0
         else None
     )
 
-    if our_nok_rate is not None:
-        suboptimal_attestations_rate.set(100 * our_nok_rate)
+    if suboptimal_attestations_rate is not None:
+        suboptimal_attestations_rate_gauge.set(100 * suboptimal_attestations_rate)
 
-    if len(our_ko_vals_index) > 0:
-        assert our_nok_rate is not None
+    if len(our_validators_index_that_did_not_attest_optimally_during_previous_slot) > 0:
+        assert suboptimal_attestations_rate is not None
 
-        firsts_index = list(our_ko_vals_index)[:5]
+        first_indexes = sorted(
+            list(
+                our_validators_index_that_did_not_attest_optimally_during_previous_slot
+            )
+        )[:5]
 
-        firsts_pubkey = (
-            our_active_val_index_to_pubkey[first_index] for first_index in firsts_index
+        first_pubkeys = (
+            our_active_validators_index_to_pubkey[first_index]
+            for first_index in first_indexes
         )
 
-        short_firsts_pubkey = [pubkey[:10] for pubkey in firsts_pubkey]
-        short_firsts_pubkey_str = ", ".join(short_firsts_pubkey)
+        short_first_pubkeys = [pubkey[:10] for pubkey in first_pubkeys]
+        short_first_pubkeys_str = ", ".join(short_first_pubkeys)
 
         print(
-            f"☣️ Our validator {short_firsts_pubkey_str} and "
-            f"{len(our_ko_vals_index) - len(short_firsts_pubkey)} more "
-            f"({round(100 * our_nok_rate, 1)} %) had not optimal attestation "
+            f"☣️ Our validator {short_first_pubkeys_str} and "
+            f"{len(our_validators_index_that_did_not_attest_optimally_during_previous_slot) - len(short_first_pubkeys)} more "
+            f"({round(100 * suboptimal_attestations_rate, 1)} %) had not optimal attestation "
             f"inclusion at slot {previous_slot}"
         )
+
+    return our_validators_index_that_did_not_attest_optimally_during_previous_slot
+
+
+def aggregate_attestations(block: Block, slot: int) -> dict[int, list[bool]]:
+    """Aggregates all attestations for the slot `slot` that are presient
+    in block `block`.
+    key  : Committee index
+    value: A list of boolean
+
+    Each boolean of the list corresponds to a validator in the given committee.
+    If the validator attestation from the previous slot is included in the current
+    slot, the boolean is True. Else, it is False.
+
+    block: Block
+    slot: Slot
+    """
+    filtered_attestations = (
+        attestation
+        for attestation in block.data.message.body.attestations
+        if attestation.data.slot == slot
+    )
+
+    # TODO: Write this code with dict comprehension
+    committee_index_to_list_of_aggregation_bools: dict[
+        int, list[list[bool]]
+    ] = defaultdict(list)
+
+    for attestation in filtered_attestations:
+        aggregated_bits_little_endian_with_last_bit = attestation.aggregation_bits
+
+        # Aggregations bits are given under binary (hexadecimal) shape.
+        # We convert bytes to booleans.
+        aggregated_bools_little_endian_with_last_bit = convert_hex_to_bools(
+            aggregated_bits_little_endian_with_last_bit
+        )
+
+        # Aggregations bits are represented in little endian shape.
+        # However, validators in committees are listed in big endian shape.
+        # We switch endianness
+        aggregated_bools_with_last_bit = switch_endianness(
+            aggregated_bools_little_endian_with_last_bit
+        )
+
+        # Aggregations bits in a given committee are represented with one bit for
+        # one validator. The number of validators bit is always a multiple of 8,
+        # even if the number of validators is not a multiple of 8.
+        # The last `1` (or last `True` in our boolean list) represents the boundary.
+        # All following `0`s can be ignored, as they do not represent validators
+        # As a consequence, we remove the last `1` and all following `0`s
+        aggregated_bools = remove_all_items_from_last_true(
+            aggregated_bools_with_last_bit
+        )
+
+        committee_index_to_list_of_aggregation_bools[attestation.data.index].append(
+            aggregated_bools
+        )
+
+    # Finally, we aggregate all attestations
+    items = committee_index_to_list_of_aggregation_bools.items()
+
+    return {
+        committee_index: aggregate_bools(list_of_aggregation_bools)
+        for committee_index, list_of_aggregation_bools in items
+    }
