@@ -14,4 +14,4 @@ def test_get_our_pubkeys() -> None:
     web3signer = Web3Signer()
 
     expected = {"0xaaa", "0xbbb", "0xccc", "0xddd", "0xeee"}
-    assert get_our_pubkeys(pubkey_path, {web3signer}) == expected  # type: ignore
+    assert get_our_pubkeys(pubkey_path, web3signer) == expected  # type: ignore

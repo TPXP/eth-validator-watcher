@@ -139,7 +139,7 @@ def load_pubkeys_from_file(path: Path) -> set[str]:
 
 def get_our_pubkeys(
     pubkeys_file_path: Optional[Path],
-    web3signers: set[Web3Signer],
+    web3signer: Optional[Web3Signer],
 ) -> set[str]:
     """Get our pubkeys
 
@@ -160,11 +160,11 @@ def get_our_pubkeys(
         else set()
     )
 
-    pubkeys_from_web3signers: set[str] = set().union(
-        *(web3signer.load_pubkeys() for web3signer in web3signers)
+    pubkeys_from_web3signer = (
+        web3signer.load_pubkeys() if web3signer is not None else set()
     )
 
-    our_pubkeys = pubkeys_from_file | pubkeys_from_web3signers
+    our_pubkeys = pubkeys_from_file | pubkeys_from_web3signer
     keys_count.set(len(our_pubkeys))
     return our_pubkeys
 

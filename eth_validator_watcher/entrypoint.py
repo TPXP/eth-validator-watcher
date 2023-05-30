@@ -48,7 +48,7 @@ def handler(
         file_okay=True,
         dir_okay=False,
     ),
-    web3signer_url: Optional[List[str]] = Option(
+    web3signer_url: Optional[str] = Option(
         None, help="URL to web3signer managing keys to watch"
     ),
     slack_channel: Optional[str] = Option(
@@ -87,7 +87,18 @@ def handler(
 
     Prometheus server is automatically exposed on port 8000.
     """
+    _handler(  # pragma: no cover
+        beacon_url, pubkeys_file_path, web3signer_url, slack_channel, liveness_file
+    )
 
+
+def _handler(
+    beacon_url: str,
+    pubkeys_file_path: Optional[Path],
+    web3signer_url: Optional[str],
+    slack_channel: Optional[str],
+    liveness_file: Optional[Path],
+) -> None:
     slack_token = environ.get("SLACK_TOKEN")
 
     if slack_channel is not None and slack_token is None:
@@ -101,15 +112,12 @@ def handler(
         else None
     )
 
-    default_set: set[str] = set()
-
-    web3signer_urls = set(web3signer_url) if web3signer_url is not None else default_set
     start_http_server(8000)
 
     beacon = Beacon(beacon_url)
     coinbase = Coinbase()
 
-    web3signers = {Web3Signer(web3signer_url) for web3signer_url in web3signer_urls}
+    web3signer = Web3Signer(web3signer_url) if web3signer_url is not None else None
 
     our_pubkeys: set[str] = set()
     our_active_index_to_pubkey: dict[int, str] = {}
@@ -121,14 +129,14 @@ def handler(
 
     last_missed_attestations_process_epoch: Optional[int] = None
 
-    for event in SSEClient(
-        requests.get(
-            f"{beacon_url}/eth/v1/events",
-            stream=True,
-            params=dict(topics="block"),
-            headers={"Accept": "text/event-stream"},
-        )
-    ).events():
+    event_response = requests.get(
+        f"{beacon_url}/eth/v1/events",
+        stream=True,
+        params=dict(topics="block"),
+        headers=dict(Accept="text/event-stream"),
+    )
+
+    for event in SSEClient(event_response).events():
         time_slot_start = datetime.now()
 
         data_dict = json.loads(event.data)
@@ -142,7 +150,7 @@ def handler(
         is_new_epoch = previous_epoch is None or previous_epoch != epoch
 
         if is_new_epoch:
-            our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signers)
+            our_pubkeys = get_our_pubkeys(pubkeys_file_path, web3signer)
             our_active_index_to_pubkey = beacon.get_active_index_to_pubkey(our_pubkeys)
             beacon.get_pending_index_to_pubkey(our_pubkeys)
             coinbase.emit_eth_usd_conversion_rate()
